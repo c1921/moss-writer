@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent } from "react"
+import { useEffect, useId, useMemo, useState, type FormEvent } from "react"
 import {
   BookOpen,
   ChevronRight,
@@ -10,7 +10,7 @@ import {
   RefreshCw,
 } from "lucide-react"
 
-import { useWriterApp } from "@/app/WriterAppContext"
+import { useWriterAppActions, useWriterProjectState } from "@/app/WriterAppContext"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -39,19 +39,20 @@ import {
 import { getBaseName } from "@/shared/utils/fileNames"
 
 export function FileSidebar() {
-  const { state, openProjectPicker, refreshFiles, selectFile, createFile } = useWriterApp()
+  const projectState = useWriterProjectState()
+  const { openProjectPicker, refreshFiles, selectFile, createFile } = useWriterAppActions()
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [nameValue, setNameValue] = useState("")
   const [isSubmittingName, setIsSubmittingName] = useState(false)
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set())
   const nameInputId = useId()
 
-  const busy = state.isProjectLoading || state.isFileLoading
+  const busy = projectState.isProjectLoading || projectState.isFileLoading
   const actionsDisabled = busy || isSubmittingName
-  const fileTree = buildFileTree(state.files)
+  const fileTree = useMemo(() => buildFileTree(projectState.files), [projectState.files])
 
   useEffect(() => {
-    const ancestors = getAncestorDirectoryPaths(state.currentFilePath)
+    const ancestors = getAncestorDirectoryPaths(projectState.currentFilePath)
     if (ancestors.length > 0) {
       setExpandedDirectories((prev) => {
         const next = new Set(prev)
@@ -61,7 +62,7 @@ export function FileSidebar() {
         return next
       })
     }
-  }, [state.currentFilePath])
+  }, [projectState.currentFilePath])
 
   function resetNameDialog() {
     setIsCreateDialogOpen(false)
@@ -69,7 +70,7 @@ export function FileSidebar() {
   }
 
   function openCreateDialog() {
-    const parentDirectory = getParentDirectoryPath(state.currentFilePath)
+    const parentDirectory = getParentDirectoryPath(projectState.currentFilePath)
 
     setIsCreateDialogOpen(true)
     setNameValue(parentDirectory ? `${parentDirectory}/新章节` : "新章节")
@@ -136,7 +137,7 @@ export function FileSidebar() {
       )
     }
 
-    const isActive = node.path === state.currentFilePath
+    const isActive = node.path === projectState.currentFilePath
 
     return (
       <Button
@@ -163,20 +164,22 @@ export function FileSidebar() {
               <p className="text-xs font-medium tracking-[0.24em] text-muted-foreground uppercase">
                 Moss Writer
               </p>
-              <CardTitle className="truncate text-2xl font-semibold tracking-tight">
-                {state.projectPath ? getBaseName(state.projectPath) : "极简小说编辑器"}
+                <CardTitle className="truncate text-2xl font-semibold tracking-tight">
+                {projectState.projectPath
+                  ? getBaseName(projectState.projectPath)
+                  : "极简小说编辑器"}
               </CardTitle>
             </div>
 
             <div className="flex items-start gap-2 text-sm text-muted-foreground">
               <FolderOpen className="mt-0.5 size-4 shrink-0" />
               <p className="line-clamp-2 break-all">
-                {state.projectPath ?? "选择一个本地文件夹作为小说项目"}
+                {projectState.projectPath ?? "选择一个本地文件夹作为小说项目"}
               </p>
             </div>
 
             <Badge className="w-fit" variant="secondary">
-              {state.files.length} 个章节
+              {projectState.files.length} 个章节
             </Badge>
           </CardHeader>
 
@@ -184,21 +187,21 @@ export function FileSidebar() {
             <div className="grid gap-2 pt-0">
               <Button
                 className="justify-start"
-                disabled={state.isProjectLoading || isSubmittingName}
+                disabled={projectState.isProjectLoading || isSubmittingName}
                 onClick={() => void openProjectPicker()}
                 type="button"
               >
-                {state.isProjectLoading ? (
+                {projectState.isProjectLoading ? (
                   <LoaderCircle className="size-4 animate-spin" />
                 ) : (
                   <FolderOpen className="size-4" />
                 )}
-                {state.projectPath ? "切换项目" : "打开项目"}
+                {projectState.projectPath ? "切换项目" : "打开项目"}
               </Button>
 
               <div className="grid grid-cols-2 gap-2">
                 <Button
-                  disabled={!state.projectPath || actionsDisabled}
+                  disabled={!projectState.projectPath || actionsDisabled}
                   onClick={openCreateDialog}
                   type="button"
                   variant="outline"
@@ -207,7 +210,7 @@ export function FileSidebar() {
                   新建章节
                 </Button>
                 <Button
-                  disabled={!state.projectPath || actionsDisabled}
+                  disabled={!projectState.projectPath || actionsDisabled}
                   onClick={() => void refreshFiles()}
                   type="button"
                   variant="outline"
@@ -225,10 +228,10 @@ export function FileSidebar() {
                   按项目实际目录结构递归显示 `.md` 文件
                 </p>
               </div>
-              <Badge variant="outline">{state.files.length}</Badge>
+              <Badge variant="outline">{projectState.files.length}</Badge>
             </div>
 
-            {!state.projectPath ? (
+            {!projectState.projectPath ? (
               <div className="flex flex-1 items-center">
                 <div className="flex w-full flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
                   <BookOpen className="size-5" />
@@ -238,7 +241,7 @@ export function FileSidebar() {
                   </div>
                 </div>
               </div>
-            ) : state.files.length === 0 ? (
+            ) : projectState.files.length === 0 ? (
               <div className="flex flex-1 items-center">
                 <div className="flex w-full flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
                   <FilePlus2 className="size-5" />

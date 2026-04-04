@@ -1,13 +1,18 @@
 import { TriangleAlert } from "lucide-react";
 
-import { WriterAppProvider, useWriterApp } from "@/app/WriterAppContext";
+import {
+  WriterAppProvider,
+  useWriterAppActions,
+  useWriterAppError,
+} from "@/app/WriterAppContext";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { EditorPane } from "@/features/editor/EditorPane";
 import { FileSidebar } from "@/features/fileManager/FileSidebar";
 
 function AppShell() {
-  const { state, clearError } = useWriterApp();
+  const appError = useWriterAppError();
+  const { clearError } = useWriterAppActions();
 
   return (
     <main className="min-h-screen bg-muted/30 p-4 lg:p-6">
@@ -15,14 +20,14 @@ function AppShell() {
         <FileSidebar />
 
         <div className="flex min-w-0 flex-col gap-4">
-          {state.appError ? (
+          {appError ? (
             <Alert
               className="border-destructive/30 bg-destructive/5 text-destructive"
               variant="destructive"
             >
               <TriangleAlert className="size-4" />
               <AlertTitle>操作失败</AlertTitle>
-              <AlertDescription>{state.appError}</AlertDescription>
+              <AlertDescription>{appError}</AlertDescription>
               <AlertAction>
                 <Button onClick={clearError} size="sm" type="button" variant="ghost">
                   关闭

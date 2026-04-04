@@ -2,28 +2,43 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
   useRef,
   type PropsWithChildren,
 } from "react";
 
+import { useAutosave } from "./hooks/useAutosave";
+import { useFileLoader } from "./hooks/useFileLoader";
+import { useProjectSession } from "./hooks/useProjectSession";
 import { appReducer, initialAppState } from "./reducer";
-import type { AppState, FileEntry, SyncResponse } from "./types";
-import { clearSessionState, loadSessionState, saveSessionState } from "../features/settings/session";
-import { pullSync, pushSync } from "../features/sync/syncService";
+import type { AppState, FileEntry, SaveStatus } from "./types";
 import { pickProjectDirectory } from "../shared/tauri/dialog";
 import {
   createFile as createFileCommand,
   deleteFile as deleteFileCommand,
   listFiles,
   openProject,
-  readFile,
   renameFile as renameFileCommand,
-  writeFile,
 } from "../shared/tauri/commands";
 
-interface WriterAppContextValue {
-  state: AppState;
+interface WriterProjectStateContextValue {
+  projectPath: string | null;
+  files: FileEntry[];
+  currentFilePath: string | null;
+  isProjectLoading: boolean;
+  isFileLoading: boolean;
+}
+
+interface WriterEditorStateContextValue {
+  currentFilePath: string | null;
+  editorContent: string;
+  saveStatus: SaveStatus;
+  isDirty: boolean;
+  isFileLoading: boolean;
+}
+
+interface WriterAppActionsContextValue {
   openProjectPicker: () => Promise<void>;
   openProjectPath: (projectPath: string, preferredFilePath?: string | null) => Promise<boolean>;
   refreshFiles: () => Promise<FileEntry[]>;
@@ -33,11 +48,12 @@ interface WriterAppContextValue {
   deleteFile: (path: string) => Promise<void>;
   updateEditorContent: (content: string) => void;
   clearError: () => void;
-  pushSync: () => Promise<SyncResponse>;
-  pullSync: () => Promise<SyncResponse>;
 }
 
-const WriterAppContext = createContext<WriterAppContextValue | null>(null);
+const WriterProjectStateContext = createContext<WriterProjectStateContextValue | null>(null);
+const WriterEditorStateContext = createContext<WriterEditorStateContextValue | null>(null);
+const WriterAppErrorContext = createContext<string | null | undefined>(undefined);
+const WriterAppActionsContext = createContext<WriterAppActionsContextValue | null>(null);
 
 function toMessage(error: unknown) {
   if (error instanceof Error) {
@@ -53,95 +69,42 @@ function toMessage(error: unknown) {
 
 export function WriterAppProvider({ children }: PropsWithChildren) {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
-  const stateRef = useRef(state);
-  const saveTimerRef = useRef<number | null>(null);
-  const savePromiseRef = useRef<Promise<void> | null>(null);
+  const stateRef = useRef<AppState>(state);
+  const actionsImplRef = useRef<WriterAppActionsContextValue>({
+    openProjectPicker: async () => {},
+    openProjectPath: async () => false,
+    refreshFiles: async () => [],
+    selectFile: async () => {},
+    createFile: async () => {},
+    renameFile: async () => {},
+    deleteFile: async () => {},
+    updateEditorContent: () => {},
+    clearError: () => {},
+  });
+  const actionsRef = useRef<WriterAppActionsContextValue | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
 
-  function clearSaveTimer() {
-    if (saveTimerRef.current === null) {
-      return;
-    }
+  const { invalidateFileLoad, loadFile } = useFileLoader({
+    dispatch,
+    toMessage,
+  });
+  const { flushPendingSave } = useAutosave({
+    state,
+    stateRef,
+    dispatch,
+    toMessage,
+  });
 
-    window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = null;
-  }
-
-  async function loadFile(path: string) {
-    dispatch({ type: "editor/fileLoading" });
-
-    try {
-      const content = await readFile(path);
-      dispatch({ type: "editor/fileLoaded", path, content });
-    } catch (error) {
-      dispatch({ type: "editor/cleared" });
-      dispatch({ type: "error/set", message: toMessage(error) });
-    }
-  }
-
-  async function saveCurrentFile() {
-    clearSaveTimer();
-
-    if (savePromiseRef.current) {
-      await savePromiseRef.current;
-    }
-
-    const snapshot = stateRef.current;
-    if (!snapshot.currentFilePath || !snapshot.isDirty) {
-      return;
-    }
-
-    const path = snapshot.currentFilePath;
-    const content = snapshot.editorContent;
-    const pendingSave = (async () => {
-      dispatch({ type: "editor/saveStarted" });
-
-      try {
-        await writeFile(path, content);
-        dispatch({ type: "editor/saveSucceeded", path, content });
-      } catch (error) {
-        dispatch({ type: "editor/saveFailed", message: toMessage(error) });
-      }
-    })();
-
-    savePromiseRef.current = pendingSave;
-    await pendingSave.finally(() => {
-      if (savePromiseRef.current === pendingSave) {
-        savePromiseRef.current = null;
-      }
-    });
-
-    const latest = stateRef.current;
-    if (
-      latest.currentFilePath === path &&
-      latest.isDirty &&
-      latest.editorContent !== content &&
-      savePromiseRef.current === null
-    ) {
-      window.setTimeout(() => {
-        void saveCurrentFile();
-      }, 0);
-    }
-  }
-
-  async function flushPendingSave() {
-    if (!stateRef.current.currentFilePath || !stateRef.current.isDirty) {
-      return true;
-    }
-
-    await saveCurrentFile();
-    return !stateRef.current.isDirty;
-  }
-
-  async function openProjectPath(projectPath: string, preferredFilePath?: string | null) {
+  actionsImplRef.current.openProjectPath = async (projectPath, preferredFilePath) => {
     const canContinue = await flushPendingSave();
     if (!canContinue) {
       return false;
     }
 
+    invalidateFileLoad();
     dispatch({ type: "project/openStarted" });
 
     try {
@@ -165,18 +128,18 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       dispatch({ type: "error/set", message: toMessage(error) });
       return false;
     }
-  }
+  };
 
-  async function openProjectPicker() {
+  actionsImplRef.current.openProjectPicker = async () => {
     const selectedPath = await pickProjectDirectory(stateRef.current.projectPath);
     if (!selectedPath) {
       return;
     }
 
-    await openProjectPath(selectedPath);
-  }
+    await actionsImplRef.current.openProjectPath(selectedPath);
+  };
 
-  async function refreshFiles() {
+  actionsImplRef.current.refreshFiles = async () => {
     const projectPath = stateRef.current.projectPath;
     if (!projectPath) {
       return [];
@@ -201,9 +164,9 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       dispatch({ type: "error/set", message: toMessage(error) });
       return stateRef.current.files;
     }
-  }
+  };
 
-  async function selectFile(path: string) {
+  actionsImplRef.current.selectFile = async (path) => {
     if (stateRef.current.currentFilePath === path) {
       return;
     }
@@ -214,9 +177,9 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     }
 
     await loadFile(path);
-  }
+  };
 
-  async function createFile(name: string) {
+  actionsImplRef.current.createFile = async (name) => {
     if (!stateRef.current.projectPath) {
       return;
     }
@@ -228,14 +191,14 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
     try {
       const createdFile = await createFileCommand(name);
-      await refreshFiles();
+      dispatch({ type: "project/fileAdded", file: createdFile });
       await loadFile(createdFile.path);
     } catch (error) {
       dispatch({ type: "error/set", message: toMessage(error) });
     }
-  }
+  };
 
-  async function renameFile(path: string, newName: string) {
+  actionsImplRef.current.renameFile = async (path, newName) => {
     const renamingCurrentFile = stateRef.current.currentFilePath === path;
 
     if (renamingCurrentFile) {
@@ -247,17 +210,13 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
     try {
       const renamedFile = await renameFileCommand(path, newName);
-      await refreshFiles();
-
-      if (renamingCurrentFile) {
-        await loadFile(renamedFile.path);
-      }
+      dispatch({ type: "project/fileRenamed", previousPath: path, file: renamedFile });
     } catch (error) {
       dispatch({ type: "error/set", message: toMessage(error) });
     }
-  }
+  };
 
-  async function deleteFile(path: string) {
+  actionsImplRef.current.deleteFile = async (path) => {
     const deletingCurrentFile = stateRef.current.currentFilePath === path;
 
     if (deletingCurrentFile) {
@@ -267,111 +226,130 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       }
     }
 
+    const remainingFiles = stateRef.current.files.filter((file) => file.path !== path);
+
     try {
       await deleteFileCommand(path);
-      const files = await refreshFiles();
+      dispatch({ type: "project/fileDeleted", path });
 
-      if (deletingCurrentFile) {
-        if (files[0]) {
-          await loadFile(files[0].path);
-        } else {
-          dispatch({ type: "editor/cleared" });
-        }
+      if (deletingCurrentFile && remainingFiles[0]) {
+        await loadFile(remainingFiles[0].path);
       }
     } catch (error) {
       dispatch({ type: "error/set", message: toMessage(error) });
     }
-  }
-
-  function updateEditorContent(content: string) {
-    dispatch({ type: "editor/contentChanged", content });
-  }
-
-  function clearError() {
-    dispatch({ type: "error/clear" });
-  }
-
-  useEffect(() => {
-    const session = loadSessionState();
-    if (!session?.projectPath) {
-      return;
-    }
-
-    void openProjectPath(session.projectPath, session.currentFilePath).then((opened) => {
-      if (!opened) {
-        clearSessionState();
-      }
-    });
-  }, []);
-
-  useEffect(() => {
-    saveSessionState({
-      projectPath: state.projectPath,
-      currentFilePath: state.currentFilePath,
-    });
-  }, [state.projectPath, state.currentFilePath]);
-
-  useEffect(() => {
-    clearSaveTimer();
-
-    if (!state.currentFilePath || !state.isDirty) {
-      return;
-    }
-
-    saveTimerRef.current = window.setTimeout(() => {
-      void saveCurrentFile();
-    }, 800);
-
-    return () => {
-      clearSaveTimer();
-    };
-  }, [state.currentFilePath, state.editorContent, state.isDirty]);
-
-  useEffect(() => {
-    function flushOnBlur() {
-      void saveCurrentFile();
-    }
-
-    function flushOnVisibilityChange() {
-      if (document.visibilityState === "hidden") {
-        void saveCurrentFile();
-      }
-    }
-
-    window.addEventListener("blur", flushOnBlur);
-    window.addEventListener("beforeunload", flushOnBlur);
-    document.addEventListener("visibilitychange", flushOnVisibilityChange);
-
-    return () => {
-      window.removeEventListener("blur", flushOnBlur);
-      window.removeEventListener("beforeunload", flushOnBlur);
-      document.removeEventListener("visibilitychange", flushOnVisibilityChange);
-    };
-  }, []);
-
-  const contextValue: WriterAppContextValue = {
-    state,
-    openProjectPicker,
-    openProjectPath,
-    refreshFiles,
-    selectFile,
-    createFile,
-    renameFile,
-    deleteFile,
-    updateEditorContent,
-    clearError,
-    pushSync,
-    pullSync,
   };
 
-  return <WriterAppContext.Provider value={contextValue}>{children}</WriterAppContext.Provider>;
+  actionsImplRef.current.updateEditorContent = (content) => {
+    dispatch({ type: "editor/contentChanged", content });
+  };
+
+  actionsImplRef.current.clearError = () => {
+    dispatch({ type: "error/clear" });
+  };
+
+  if (!actionsRef.current) {
+    actionsRef.current = {
+      openProjectPicker: () => actionsImplRef.current.openProjectPicker(),
+      openProjectPath: (projectPath, preferredFilePath) =>
+        actionsImplRef.current.openProjectPath(projectPath, preferredFilePath),
+      refreshFiles: () => actionsImplRef.current.refreshFiles(),
+      selectFile: (path) => actionsImplRef.current.selectFile(path),
+      createFile: (name) => actionsImplRef.current.createFile(name),
+      renameFile: (path, newName) => actionsImplRef.current.renameFile(path, newName),
+      deleteFile: (path) => actionsImplRef.current.deleteFile(path),
+      updateEditorContent: (content) => actionsImplRef.current.updateEditorContent(content),
+      clearError: () => actionsImplRef.current.clearError(),
+    };
+  }
+
+  useProjectSession({
+    projectPath: state.projectPath,
+    currentFilePath: state.currentFilePath,
+    openProjectPath: actionsRef.current.openProjectPath,
+  });
+
+  const projectStateValue = useMemo<WriterProjectStateContextValue>(
+    () => ({
+      projectPath: state.projectPath,
+      files: state.files,
+      currentFilePath: state.currentFilePath,
+      isProjectLoading: state.isProjectLoading,
+      isFileLoading: state.isFileLoading,
+    }),
+    [
+      state.projectPath,
+      state.files,
+      state.currentFilePath,
+      state.isProjectLoading,
+      state.isFileLoading,
+    ],
+  );
+  const editorStateValue = useMemo<WriterEditorStateContextValue>(
+    () => ({
+      currentFilePath: state.currentFilePath,
+      editorContent: state.editorContent,
+      saveStatus: state.saveStatus,
+      isDirty: state.isDirty,
+      isFileLoading: state.isFileLoading,
+    }),
+    [
+      state.currentFilePath,
+      state.editorContent,
+      state.saveStatus,
+      state.isDirty,
+      state.isFileLoading,
+    ],
+  );
+
+  return (
+    <WriterAppActionsContext.Provider value={actionsRef.current}>
+      <WriterAppErrorContext.Provider value={state.appError}>
+        <WriterProjectStateContext.Provider value={projectStateValue}>
+          <WriterEditorStateContext.Provider value={editorStateValue}>
+            {children}
+          </WriterEditorStateContext.Provider>
+        </WriterProjectStateContext.Provider>
+      </WriterAppErrorContext.Provider>
+    </WriterAppActionsContext.Provider>
+  );
 }
 
-export function useWriterApp() {
-  const context = useContext(WriterAppContext);
+export function useWriterProjectState() {
+  const context = useContext(WriterProjectStateContext);
 
   if (!context) {
-    throw new Error("useWriterApp 必须在 WriterAppProvider 内使用");
+    throw new Error("useWriterProjectState 必须在 WriterAppProvider 内使用");
+  }
+
+  return context;
+}
+
+export function useWriterEditorState() {
+  const context = useContext(WriterEditorStateContext);
+
+  if (!context) {
+    throw new Error("useWriterEditorState 必须在 WriterAppProvider 内使用");
+  }
+
+  return context;
+}
+
+export function useWriterAppError() {
+  const context = useContext(WriterAppErrorContext);
+
+  if (context === undefined) {
+    throw new Error("useWriterAppError 必须在 WriterAppProvider 内使用");
+  }
+
+  return context;
+}
+
+export function useWriterAppActions() {
+  const context = useContext(WriterAppActionsContext);
+
+  if (!context) {
+    throw new Error("useWriterAppActions 必须在 WriterAppProvider 内使用");
   }
 
   return context;

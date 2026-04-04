@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { FileEntry, ProjectSnapshot, SyncResponse } from "../../app/types";
+import type { FileEntry, ProjectSnapshot } from "../../app/types";
+import type { SyncResponse } from "../../features/sync/types";
 
 function command<T>(name: string, args?: Record<string, unknown>) {
   return invoke<T>(name, args);

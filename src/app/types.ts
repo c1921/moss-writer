@@ -16,11 +16,6 @@ export interface SessionState {
   currentFilePath: string | null;
 }
 
-export interface SyncResponse {
-  status: "unsupported" | "success" | "error";
-  message: string;
-}
-
 export interface AppState {
   projectPath: string | null;
   files: FileEntry[];

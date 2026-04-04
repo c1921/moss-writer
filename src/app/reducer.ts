@@ -7,6 +7,9 @@ type AppAction =
   | { type: "project/openStarted" }
   | { type: "project/opened"; snapshot: ProjectSnapshot }
   | { type: "project/filesUpdated"; files: FileEntry[] }
+  | { type: "project/fileAdded"; file: FileEntry }
+  | { type: "project/fileRenamed"; previousPath: string; file: FileEntry }
+  | { type: "project/fileDeleted"; path: string }
   | { type: "editor/fileLoading" }
   | { type: "editor/fileLoaded"; path: string; content: string }
   | { type: "editor/cleared" }
@@ -14,6 +17,13 @@ type AppAction =
   | { type: "editor/saveStarted" }
   | { type: "editor/saveSucceeded"; path: string; content: string }
   | { type: "editor/saveFailed"; message: string };
+
+function compareFileEntries(left: FileEntry, right: FileEntry) {
+  return left.path.localeCompare(right.path, "zh-CN", {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
 
 export const initialAppState: AppState = {
   projectPath: null,
@@ -82,6 +92,50 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         files: action.files,
+        currentFilePath: null,
+        editorContent: "",
+        saveStatus: "idle",
+        appError: null,
+        isDirty: false,
+        isFileLoading: false,
+      };
+    }
+
+    case "project/fileAdded":
+      return {
+        ...state,
+        files: [...state.files, action.file].sort(compareFileEntries),
+        appError: null,
+      };
+
+    case "project/fileRenamed": {
+      const files = state.files
+        .map((file) => (file.path === action.previousPath ? action.file : file))
+        .sort(compareFileEntries);
+
+      return {
+        ...state,
+        files,
+        currentFilePath:
+          state.currentFilePath === action.previousPath ? action.file.path : state.currentFilePath,
+        appError: null,
+      };
+    }
+
+    case "project/fileDeleted": {
+      const files = state.files.filter((file) => file.path !== action.path);
+
+      if (state.currentFilePath !== action.path) {
+        return {
+          ...state,
+          files,
+          appError: null,
+        };
+      }
+
+      return {
+        ...state,
+        files,
         currentFilePath: null,
         editorContent: "",
         saveStatus: "idle",
