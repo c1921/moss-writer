@@ -1,5 +1,12 @@
-import { useWriterApp } from "../../app/WriterAppContext";
-import { stripMarkdownExtension } from "../../shared/utils/fileNames";
+import type { ReactElement } from "react";
+import { BookOpen, FileText } from "lucide-react";
+
+import { useWriterApp } from "@/app/WriterAppContext";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { getBaseName, stripMarkdownExtension } from "@/shared/utils/fileNames";
 
 function renderSaveStatus(
   saveStatus: string,
@@ -34,6 +41,59 @@ function renderSaveStatus(
   return "就绪";
 }
 
+function getSaveBadgeClass(
+  saveStatus: string,
+  isDirty: boolean,
+  currentFilePath: string | null,
+  isFileLoading: boolean,
+) {
+  if (!currentFilePath) {
+    return "border-border/70 text-muted-foreground";
+  }
+
+  if (isFileLoading || saveStatus === "saving") {
+    return "border-transparent bg-secondary text-secondary-foreground";
+  }
+
+  if (saveStatus === "error") {
+    return "border-transparent bg-destructive/10 text-destructive";
+  }
+
+  if (isDirty) {
+    return "border-transparent bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  }
+
+  if (saveStatus === "saved") {
+    return "border-transparent bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+
+  return "border-border/70 text-muted-foreground";
+}
+
+function renderEmptyState(
+  title: string,
+  description: string,
+  badgeLabel: string,
+  icon: ReactElement,
+) {
+  return (
+    <section className="flex min-h-[22rem] flex-1">
+      <Card className="flex flex-1 items-center justify-center border-0 shadow-sm">
+        <CardContent className="flex max-w-md flex-col items-center gap-4 py-10 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            {icon}
+          </div>
+          <Badge variant="outline">{badgeLabel}</Badge>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
+            <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+          </div>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
 export function EditorPane() {
   const { state, updateEditorContent } = useWriterApp();
   const saveLabel = renderSaveStatus(
@@ -42,52 +102,70 @@ export function EditorPane() {
     state.currentFilePath,
     state.isFileLoading,
   );
+  const saveBadgeClassName = getSaveBadgeClass(
+    state.saveStatus,
+    state.isDirty,
+    state.currentFilePath,
+    state.isFileLoading,
+  );
+  const currentFileName = state.currentFilePath
+    ? stripMarkdownExtension(
+        state.files.find((file) => file.path === state.currentFilePath)?.name ??
+          getBaseName(state.currentFilePath),
+      )
+    : null;
 
   if (!state.projectPath) {
-    return (
-      <section className="editor-pane editor-pane--empty">
-        <div className="editor-pane__placeholder">
-          <p className="editor-pane__eyebrow">专注写作</p>
-          <h2>先打开一个小说项目</h2>
-          <p>项目根目录下的 `.md` 文件会显示在左侧，右侧只保留纯文本编辑体验。</p>
-        </div>
-      </section>
+    return renderEmptyState(
+      "先打开一个小说项目",
+      "项目根目录下的 `.md` 文件会显示在左侧，右侧保持纯文本写作体验。",
+      "专注写作",
+      <BookOpen className="size-5" />,
     );
   }
 
   if (!state.currentFilePath) {
-    return (
-      <section className="editor-pane editor-pane--empty">
-        <div className="editor-pane__placeholder">
-          <p className="editor-pane__eyebrow">项目已打开</p>
-          <h2>选择一个章节开始写作</h2>
-          <p>如果当前项目还没有章节，可以在左侧创建一个新的 `.md` 文件。</p>
-        </div>
-      </section>
+    return renderEmptyState(
+      "选择一个章节开始写作",
+      "如果当前项目还没有章节，可以在左侧新建一个 `.md` 文件。",
+      "项目已打开",
+      <FileText className="size-5" />,
     );
   }
 
   return (
-    <section className="editor-pane">
-      <header className="editor-pane__header">
-        <div>
-          <p className="editor-pane__eyebrow">当前章节</p>
-          <h2 className="editor-pane__title">
-            {stripMarkdownExtension(state.currentFilePath)}
-          </h2>
-        </div>
-        <div className={`status-badge status-badge--${state.saveStatus}`}>{saveLabel}</div>
-      </header>
+    <section className="flex min-h-[22rem] flex-1">
+      <Card className="flex min-h-full flex-1 border-0 shadow-sm">
+        <CardHeader className="gap-3 border-b">
+          <div className="space-y-1">
+            <p className="text-xs font-medium tracking-[0.24em] text-muted-foreground uppercase">
+              当前章节
+            </p>
+            <CardTitle className="text-2xl font-semibold tracking-tight">
+              {currentFileName}
+            </CardTitle>
+            <p className="truncate text-sm text-muted-foreground">{state.currentFilePath}</p>
+          </div>
 
-      <textarea
-        aria-label="小说正文编辑区"
-        className="editor-pane__textarea"
-        disabled={state.isFileLoading}
-        onChange={(event) => updateEditorContent(event.currentTarget.value)}
-        placeholder="开始写作..."
-        spellCheck={false}
-        value={state.editorContent}
-      />
+          <div className="flex items-center gap-2">
+            <Badge className={cn("border", saveBadgeClassName)} variant="outline">
+              {saveLabel}
+            </Badge>
+          </div>
+        </CardHeader>
+
+        <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
+          <Textarea
+            aria-label="小说正文编辑区"
+            className="min-h-[60vh] flex-1 resize-none border-0 px-1 py-0 text-base leading-8 shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-lg"
+            disabled={state.isFileLoading}
+            onChange={(event) => updateEditorContent(event.currentTarget.value)}
+            placeholder="开始写作..."
+            spellCheck={false}
+            value={state.editorContent}
+          />
+        </CardContent>
+      </Card>
     </section>
   );
 }
