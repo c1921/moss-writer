@@ -11,7 +11,7 @@ use crate::state::ProjectState;
 
 type AppResult<T> = Result<T, String>;
 
-const INVALID_FILE_NAME_CHARS: [char; 9] = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+const INVALID_PATH_NAME_CHARS: [char; 9] = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -110,8 +110,8 @@ fn canonicalize_directory(directory: &str) -> AppResult<PathBuf> {
         return Err("项目目录不能为空".to_string());
     }
 
-    let canonical = fs::canonicalize(trimmed)
-        .map_err(|error| format!("无法打开项目目录：{error}"))?;
+    let canonical =
+        fs::canonicalize(trimmed).map_err(|error| format!("无法打开项目目录：{error}"))?;
 
     if !canonical.is_dir() {
         return Err("所选路径不是文件夹".to_string());
@@ -124,48 +124,46 @@ fn canonicalize_root(root: &Path) -> AppResult<PathBuf> {
     fs::canonicalize(root).map_err(|error| format!("项目目录不可访问：{error}"))
 }
 
-fn normalize_file_name(input: &str, auto_append_md: bool) -> AppResult<String> {
+fn normalize_project_file_path(input: &str, auto_append_md: bool) -> AppResult<String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
-        return Err("文件名不能为空".to_string());
+        return Err("文件路径不能为空".to_string());
     }
 
-    if Path::new(trimmed).is_absolute() {
+    if Path::new(trimmed).is_absolute() || trimmed.starts_with('/') || trimmed.starts_with('\\') {
         return Err("不允许使用绝对路径".to_string());
     }
 
-    if trimmed.contains('/') || trimmed.contains('\\') {
-        return Err("MVP 版本只支持项目根目录下的文件".to_string());
+    let normalized = trimmed.replace('\\', "/");
+    let mut segments = normalized
+        .split('/')
+        .map(str::to_string)
+        .collect::<Vec<String>>();
+
+    if segments.is_empty() || segments.iter().any(|segment| segment.is_empty()) {
+        return Err("文件路径格式不合法".to_string());
     }
 
-    if trimmed == "." || trimmed == ".." {
-        return Err("文件名不合法".to_string());
+    let last_index = segments.len() - 1;
+    for (index, segment) in segments.iter().enumerate() {
+        validate_path_segment(segment, index == last_index)?;
     }
 
-    if trimmed.ends_with('.') || trimmed.ends_with(' ') {
-        return Err("文件名不能以空格或点结尾".to_string());
-    }
+    let last_segment = segments
+        .last_mut()
+        .ok_or_else(|| "文件路径格式不合法".to_string())?;
 
-    if trimmed
-        .chars()
-        .any(|ch| ch.is_control() || INVALID_FILE_NAME_CHARS.contains(&ch))
-    {
-        return Err("文件名包含非法字符".to_string());
-    }
-
-    let mut normalized = trimmed.to_string();
-    let extension = Path::new(trimmed)
+    match Path::new(last_segment)
         .extension()
-        .and_then(|value| value.to_str());
-
-    match extension {
+        .and_then(|value| value.to_str())
+    {
         Some(ext) if ext.eq_ignore_ascii_case("md") => {}
         Some(_) => return Err("只允许使用 .md 文件".to_string()),
-        None if auto_append_md => normalized.push_str(".md"),
+        None if auto_append_md => last_segment.push_str(".md"),
         None => return Err("文件必须是 .md".to_string()),
     }
 
-    let stem = Path::new(&normalized)
+    let stem = Path::new(last_segment)
         .file_stem()
         .and_then(|value| value.to_str())
         .ok_or_else(|| "文件名不合法".to_string())?;
@@ -178,7 +176,43 @@ fn normalize_file_name(input: &str, auto_append_md: bool) -> AppResult<String> {
         return Err("文件名与系统保留名称冲突".to_string());
     }
 
-    Ok(normalized)
+    Ok(segments.join("/"))
+}
+
+fn validate_path_segment(segment: &str, is_last_segment: bool) -> AppResult<()> {
+    if segment == "." || segment == ".." {
+        return Err("文件路径不能包含 . 或 ..".to_string());
+    }
+
+    if segment.ends_with('.') || segment.ends_with(' ') {
+        return Err("路径名称不能以空格或点结尾".to_string());
+    }
+
+    if segment
+        .chars()
+        .any(|ch| ch.is_control() || INVALID_PATH_NAME_CHARS.contains(&ch))
+    {
+        return Err("路径名称包含非法字符".to_string());
+    }
+
+    let reserved_target = if is_last_segment {
+        Path::new(segment)
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or(segment)
+    } else {
+        segment
+    };
+
+    if reserved_target.is_empty() {
+        return Err("路径名称不合法".to_string());
+    }
+
+    if is_reserved_windows_name(reserved_target) {
+        return Err("路径名称与系统保留名称冲突".to_string());
+    }
+
+    Ok(())
 }
 
 fn is_reserved_windows_name(stem: &str) -> bool {
@@ -209,16 +243,41 @@ fn is_reserved_windows_name(stem: &str) -> bool {
     )
 }
 
+fn ensure_within_root(root: &Path, path: &Path) -> AppResult<()> {
+    if path.starts_with(root) {
+        Ok(())
+    } else {
+        Err("文件路径超出项目目录".to_string())
+    }
+}
+
+fn is_markdown_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("md"))
+}
+
+fn relative_project_path(root: &Path, path: &Path) -> AppResult<String> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| "文件路径超出项目目录".to_string())?;
+
+    let normalized = relative.to_string_lossy().replace('\\', "/");
+    if normalized.is_empty() {
+        return Err("文件路径不合法".to_string());
+    }
+
+    Ok(normalized)
+}
+
 fn resolve_existing_project_file(root: &Path, raw_path: &str) -> AppResult<(String, PathBuf)> {
     let root = canonicalize_root(root)?;
-    let normalized = normalize_file_name(raw_path, false)?;
-    let candidate = root.join(&normalized);
+    let normalized = normalize_project_file_path(raw_path, false)?;
+    let candidate = root.join(Path::new(&normalized));
     let canonical = fs::canonicalize(&candidate)
         .map_err(|error| format!("文件不存在或不可访问：{error}"))?;
 
-    if !canonical.starts_with(root) {
-        return Err("文件路径超出项目目录".to_string());
-    }
+    ensure_within_root(&root, &canonical)?;
 
     if !canonical.is_file() {
         return Err("目标不是文件".to_string());
@@ -229,8 +288,23 @@ fn resolve_existing_project_file(root: &Path, raw_path: &str) -> AppResult<(Stri
 
 fn resolve_new_project_file(root: &Path, raw_path: &str) -> AppResult<(String, PathBuf)> {
     let root = canonicalize_root(root)?;
-    let normalized = normalize_file_name(raw_path, true)?;
-    let candidate = root.join(&normalized);
+    let normalized = normalize_project_file_path(raw_path, true)?;
+    let candidate = root.join(Path::new(&normalized));
+    let parent = candidate
+        .parent()
+        .ok_or_else(|| "文件路径不合法".to_string())?;
+
+    if !parent.exists() {
+        return Err("目标目录不存在".to_string());
+    }
+
+    let canonical_parent = fs::canonicalize(parent)
+        .map_err(|error| format!("目标目录不可访问：{error}"))?;
+    ensure_within_root(&root, &canonical_parent)?;
+
+    if !canonical_parent.is_dir() {
+        return Err("目标目录不可用".to_string());
+    }
 
     if candidate.exists() {
         return Err("目标文件已存在".to_string());
@@ -239,7 +313,7 @@ fn resolve_new_project_file(root: &Path, raw_path: &str) -> AppResult<(String, P
     Ok((normalized, candidate))
 }
 
-fn file_entry_from_path(path: &Path) -> AppResult<FileEntry> {
+fn file_entry_from_path(root: &Path, path: &Path) -> AppResult<FileEntry> {
     let name = path
         .file_name()
         .and_then(|value| value.to_str())
@@ -254,37 +328,56 @@ fn file_entry_from_path(path: &Path) -> AppResult<FileEntry> {
         .map(|duration| duration.as_secs());
 
     Ok(FileEntry {
-        name: name.clone(),
-        path: name,
+        name,
+        path: relative_project_path(root, path)?,
         updated_at,
     })
+}
+
+fn collect_project_files(root: &Path, directory: &Path, files: &mut Vec<FileEntry>) -> AppResult<()> {
+    let mut entries = fs::read_dir(directory)
+        .map_err(|error| format!("无法读取项目目录：{error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("无法读取目录内容：{error}"))?;
+
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_ascii_lowercase());
+
+    for entry in entries {
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("无法读取目录内容：{error}"))?;
+
+        if file_type.is_dir() {
+            let canonical = fs::canonicalize(&path)
+                .map_err(|error| format!("无法读取目录内容：{error}"))?;
+            if canonical.starts_with(root) {
+                collect_project_files(root, &path, files)?;
+            }
+            continue;
+        }
+
+        if !file_type.is_file() || !is_markdown_path(&path) {
+            continue;
+        }
+
+        let canonical = fs::canonicalize(&path)
+            .map_err(|error| format!("无法读取目录内容：{error}"))?;
+        if canonical.starts_with(root) {
+            files.push(file_entry_from_path(root, &path)?);
+        }
+    }
+
+    Ok(())
 }
 
 pub fn list_project_files(root: &Path) -> AppResult<Vec<FileEntry>> {
     let root = canonicalize_root(root)?;
     let mut files = Vec::new();
 
-    for entry in fs::read_dir(&root).map_err(|error| format!("无法读取项目目录：{error}"))? {
-        let entry = entry.map_err(|error| format!("无法读取目录内容：{error}"))?;
-        let path = entry.path();
+    collect_project_files(&root, &root, &mut files)?;
+    files.sort_by_key(|entry| entry.path.to_ascii_lowercase());
 
-        if !path.is_file() {
-            continue;
-        }
-
-        let is_markdown = path
-            .extension()
-            .and_then(|value| value.to_str())
-            .is_some_and(|value| value.eq_ignore_ascii_case("md"));
-
-        if !is_markdown {
-            continue;
-        }
-
-        files.push(file_entry_from_path(&path)?);
-    }
-
-    files.sort_by_key(|entry| entry.name.to_ascii_lowercase());
     Ok(files)
 }
 
@@ -303,7 +396,8 @@ pub fn write_project_file(root: &Path, raw_path: &str, content: &str) -> AppResu
 pub fn create_project_file(root: &Path, raw_path: &str) -> AppResult<FileEntry> {
     let (_, file_path) = resolve_new_project_file(root, raw_path)?;
     fs::write(&file_path, "").map_err(|error| format!("创建文件失败：{error}"))?;
-    file_entry_from_path(&file_path)
+    let root = canonicalize_root(root)?;
+    file_entry_from_path(&root, &file_path)
 }
 
 pub fn rename_project_file(root: &Path, raw_path: &str, new_name: &str) -> AppResult<FileEntry> {
@@ -311,7 +405,8 @@ pub fn rename_project_file(root: &Path, raw_path: &str, new_name: &str) -> AppRe
     let (_, target_path) = resolve_new_project_file(root, new_name)?;
 
     fs::rename(&source_path, &target_path).map_err(|error| format!("重命名失败：{error}"))?;
-    file_entry_from_path(&target_path)
+    let root = canonicalize_root(root)?;
+    file_entry_from_path(&root, &target_path)
 }
 
 pub fn delete_project_file(root: &Path, raw_path: &str) -> AppResult<()> {
@@ -353,26 +448,28 @@ mod tests {
     }
 
     #[test]
-    fn list_project_files_only_returns_markdown_files() {
+    fn list_project_files_recursively_returns_markdown_files() {
         let project = TestProject::new();
+        fs::create_dir_all(project.path().join("drafts/part-1")).unwrap();
         fs::write(project.path().join("chapter-1.md"), "content").unwrap();
-        fs::write(project.path().join("notes.txt"), "ignored").unwrap();
-        fs::create_dir(project.path().join("drafts")).unwrap();
+        fs::write(project.path().join("drafts/part-1/chapter-2.md"), "nested").unwrap();
+        fs::write(project.path().join("drafts/part-1/notes.txt"), "ignored").unwrap();
 
         let files = list_project_files(project.path()).unwrap();
+        let paths = files.into_iter().map(|file| file.path).collect::<Vec<_>>();
 
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].name, "chapter-1.md");
+        assert_eq!(paths.len(), 2);
+        assert!(paths.contains(&"chapter-1.md".to_string()));
+        assert!(paths.contains(&"drafts/part-1/chapter-2.md".to_string()));
     }
 
     #[test]
-    fn create_project_file_rejects_duplicate_name() {
+    fn create_project_file_requires_existing_parent_dir() {
         let project = TestProject::new();
 
-        create_project_file(project.path(), "chapter-1").unwrap();
-        let error = create_project_file(project.path(), "chapter-1.md").unwrap_err();
+        let error = create_project_file(project.path(), "drafts/chapter-1").unwrap_err();
 
-        assert!(error.contains("已存在"));
+        assert!(error.contains("目标目录不存在"));
     }
 
     #[test]
@@ -380,19 +477,34 @@ mod tests {
         let project = TestProject::new();
         let error = read_project_file(project.path(), "../secret.md").unwrap_err();
 
-        assert!(error.contains("根目录"));
+        assert!(error.contains(". 或 .."));
     }
 
     #[test]
-    fn rename_and_delete_project_file_succeed() {
+    fn nested_project_file_operations_succeed() {
         let project = TestProject::new();
-        create_project_file(project.path(), "chapter-1").unwrap();
+        fs::create_dir_all(project.path().join("drafts")).unwrap();
+        fs::create_dir_all(project.path().join("published")).unwrap();
 
-        let renamed = rename_project_file(project.path(), "chapter-1.md", "chapter-2").unwrap();
-        assert_eq!(renamed.name, "chapter-2.md");
-        assert!(project.path().join("chapter-2.md").exists());
+        let created = create_project_file(project.path(), "drafts/chapter-1").unwrap();
+        assert_eq!(created.path, "drafts/chapter-1.md");
 
-        delete_project_file(project.path(), "chapter-2.md").unwrap();
-        assert!(!project.path().join("chapter-2.md").exists());
+        write_project_file(project.path(), "drafts/chapter-1.md", "hello").unwrap();
+        assert_eq!(
+            read_project_file(project.path(), "drafts/chapter-1.md").unwrap(),
+            "hello"
+        );
+
+        let renamed = rename_project_file(
+            project.path(),
+            "drafts/chapter-1.md",
+            "published/chapter-1-final",
+        )
+        .unwrap();
+        assert_eq!(renamed.path, "published/chapter-1-final.md");
+        assert!(project.path().join("published/chapter-1-final.md").exists());
+
+        delete_project_file(project.path(), "published/chapter-1-final.md").unwrap();
+        assert!(!project.path().join("published/chapter-1-final.md").exists());
     }
 }

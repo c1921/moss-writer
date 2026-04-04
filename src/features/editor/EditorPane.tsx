@@ -118,7 +118,7 @@ export function EditorPane() {
   if (!state.projectPath) {
     return renderEmptyState(
       "先打开一个小说项目",
-      "项目根目录下的 `.md` 文件会显示在左侧，右侧保持纯文本写作体验。",
+      "项目中的 `.md` 文件会按实际目录结构显示在左侧，右侧保持纯文本写作体验。",
       "专注写作",
       <BookOpen className="size-5" />,
     );
