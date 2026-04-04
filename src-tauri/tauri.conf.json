@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "moss-writer",
-        "width": 800,
-        "height": 600
+        "title": "Moss Writer",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640
       }
     ],
     "security": {
