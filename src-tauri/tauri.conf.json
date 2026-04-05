@@ -15,8 +15,8 @@
         "title": "Moss Writer",
         "width": 1280,
         "height": 800,
-        "minWidth": 960,
-        "minHeight": 640
+        "minWidth": 300,
+        "minHeight": 100
       }
     ],
     "security": {
