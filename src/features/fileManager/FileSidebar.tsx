@@ -6,12 +6,13 @@ import {
   FilePlus2,
   FolderIcon,
   FolderOpen,
+  FolderPlus,
   LoaderCircle,
+  Plus,
   RefreshCw,
 } from "lucide-react"
 
 import { useWriterAppActions, useWriterProjectState } from "@/app/WriterAppContext"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Collapsible,
@@ -31,36 +32,49 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import {
   buildFileTree,
   getAncestorDirectoryPaths,
-  getParentDirectoryPath,
   type FileTreeNode,
 } from "@/features/fileManager/fileTree"
 import { getBaseName } from "@/shared/utils/fileNames"
 
+type DialogMode = "file" | "directory"
+
+interface DialogState {
+  open: boolean
+  mode: DialogMode
+  initialPath: string
+}
+
+const CLOSED_DIALOG: DialogState = { open: false, mode: "file", initialPath: "" }
+
 export function FileSidebar() {
   const projectState = useWriterProjectState()
-  const { openProjectPicker, refreshFiles, selectFile, createFile } = useWriterAppActions()
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const { openProjectPicker, refreshFiles, selectFile, createFile, createDirectory } =
+    useWriterAppActions()
+  const [dialog, setDialog] = useState<DialogState>(CLOSED_DIALOG)
   const [nameValue, setNameValue] = useState("")
-  const [isSubmittingName, setIsSubmittingName] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set())
   const nameInputId = useId()
 
   const busy = projectState.isProjectLoading || projectState.isFileLoading
-  const actionsDisabled = busy || isSubmittingName
+  const actionsDisabled = busy || isSubmitting
   const fileTree = useMemo(() => buildFileTree(projectState.files), [projectState.files])
 
   useEffect(() => {
@@ -68,48 +82,68 @@ export function FileSidebar() {
     if (ancestors.length > 0) {
       setExpandedDirectories((prev) => {
         const next = new Set(prev)
-        for (const ancestor of ancestors) {
-          next.add(ancestor)
-        }
+        for (const ancestor of ancestors) next.add(ancestor)
         return next
       })
     }
   }, [projectState.currentFilePath])
 
-  function resetNameDialog() {
-    setIsCreateDialogOpen(false)
+  // Sync input when dialog opens
+  useEffect(() => {
+    if (dialog.open) {
+      setNameValue(dialog.initialPath)
+    }
+  }, [dialog.open, dialog.initialPath])
+
+  function closeDialog() {
+    setDialog(CLOSED_DIALOG)
     setNameValue("")
   }
 
-  function openCreateDialog() {
-    const parentDirectory = getParentDirectoryPath(projectState.currentFilePath)
-    setIsCreateDialogOpen(true)
-    setNameValue(parentDirectory ? `${parentDirectory}/新章节` : "新章节")
+  function openFileDialog(dirPath?: string) {
+    setDialog({
+      open: true,
+      mode: "file",
+      initialPath: dirPath ? `${dirPath}/新章节` : "新章节",
+    })
   }
 
-  async function handleSubmitNameDialog(event: FormEvent<HTMLFormElement>) {
+  function switchMode(mode: DialogMode) {
+    const currentBase = nameValue.replace(/\/[^/]*$/, "") || ""
+    if (mode === "file") {
+      setNameValue(currentBase ? `${currentBase}/新章节` : "新章节")
+    } else {
+      setNameValue(currentBase ? `${currentBase}/新文件夹` : "新文件夹")
+    }
+    setDialog((prev) => ({ ...prev, mode }))
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const value = nameValue.trim()
+    if (!value) return
 
-    const nextName = nameValue.trim()
-    if (!nextName) return
-
-    setIsSubmittingName(true)
+    setIsSubmitting(true)
     try {
-      await createFile(nextName)
-      resetNameDialog()
+      if (dialog.mode === "file") {
+        await createFile(value)
+        closeDialog()
+      } else {
+        await createDirectory(value)
+        // After creating directory, switch to file creation inside it
+        setDialog({ open: true, mode: "file", initialPath: `${value}/新章节` })
+        setNameValue(`${value}/新章节`)
+      }
     } finally {
-      setIsSubmittingName(false)
+      setIsSubmitting(false)
     }
   }
 
   function handleDirectoryOpenChange(path: string, open: boolean) {
     setExpandedDirectories((prev) => {
       const next = new Set(prev)
-      if (open) {
-        next.add(path)
-      } else {
-        next.delete(path)
-      }
+      if (open) next.add(path)
+      else next.delete(path)
       return next
     })
   }
@@ -139,12 +173,20 @@ export function FileSidebar() {
                 </SidebarMenuSub>
               </CollapsibleContent>
             </Collapsible>
+            <SidebarMenuAction
+              disabled={actionsDisabled}
+              onClick={() => openFileDialog(node.path)}
+              showOnHover
+              title="在此目录下新建章节"
+            >
+              <Plus />
+            </SidebarMenuAction>
           </SidebarMenuItem>
         )
       }
 
       return (
-        <SidebarMenuSubItem key={node.path}>
+        <SidebarMenuSubItem key={node.path} className="group/sub-dir relative">
           <Collapsible
             className="group/tree-node w-full"
             onOpenChange={(open) => handleDirectoryOpenChange(node.path, open)}
@@ -163,6 +205,15 @@ export function FileSidebar() {
               </SidebarMenuSub>
             </CollapsibleContent>
           </Collapsible>
+          <button
+            className="absolute right-1 top-1 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-sidebar-foreground opacity-0 outline-hidden transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:opacity-100 focus-visible:ring-2 group-hover/sub-dir:opacity-100 disabled:pointer-events-none [&>svg]:size-4 [&>svg]:shrink-0"
+            disabled={actionsDisabled}
+            onClick={() => openFileDialog(node.path)}
+            title="在此目录下新建章节"
+            type="button"
+          >
+            <Plus />
+          </button>
         </SidebarMenuSubItem>
       )
     }
@@ -201,145 +252,145 @@ export function FileSidebar() {
   return (
     <>
       <Sidebar collapsible="offcanvas">
-        <SidebarHeader className="gap-3 border-b pb-4">
-          <div className="space-y-1">
-            <p className="text-xs font-medium tracking-[0.24em] text-muted-foreground uppercase">
-              Moss Writer
-            </p>
-            <p className="truncate text-2xl font-semibold tracking-tight">
-              {projectState.projectPath
-                ? getBaseName(projectState.projectPath)
-                : "极简小说编辑器"}
-            </p>
-          </div>
-
-          <div className="flex items-start gap-2 text-sm text-muted-foreground">
-            <FolderOpen className="mt-0.5 size-4 shrink-0" />
-            <p className="line-clamp-2 break-all">
-              {projectState.projectPath ?? "选择一个本地文件夹作为小说项目"}
-            </p>
-          </div>
-
-          <Badge className="w-fit" variant="secondary">
-            {projectState.files.length} 个章节
-          </Badge>
-
-          <div className="grid gap-2">
-            <Button
-              className="justify-start"
-              disabled={projectState.isProjectLoading || isSubmittingName}
-              onClick={() => void openProjectPicker()}
-              type="button"
-            >
-              {projectState.isProjectLoading ? (
-                <LoaderCircle className="size-4 animate-spin" />
-              ) : (
-                <FolderOpen className="size-4" />
-              )}
-              {projectState.projectPath ? "切换项目" : "打开项目"}
-            </Button>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                disabled={!projectState.projectPath || actionsDisabled}
-                onClick={openCreateDialog}
-                type="button"
-                variant="outline"
+        <SidebarHeader>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className="h-auto py-2"
+                disabled={projectState.isProjectLoading || isSubmitting}
+                onClick={() => void openProjectPicker()}
+                size="lg"
+                title={projectState.projectPath ? "切换项目" : "打开项目"}
               >
-                <FilePlus2 className="size-4" />
-                新建章节
-              </Button>
-              <Button
-                disabled={!projectState.projectPath || actionsDisabled}
-                onClick={() => void refreshFiles()}
-                type="button"
-                variant="outline"
-              >
-                <RefreshCw className={cn("size-4", busy && "animate-spin")} />
-                刷新
-              </Button>
-            </div>
-          </div>
+                {projectState.isProjectLoading ? (
+                  <LoaderCircle className="size-5 shrink-0 animate-spin" />
+                ) : (
+                  <FolderOpen className="size-5 shrink-0" />
+                )}
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate font-semibold">
+                    {projectState.projectPath
+                      ? getBaseName(projectState.projectPath)
+                      : "打开项目"}
+                  </span>
+                  {!projectState.projectPath && (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      选择本地文件夹
+                    </span>
+                  )}
+                </div>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         </SidebarHeader>
 
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel className="flex items-center justify-between">
-              章节结构
-              <Badge variant="outline">{projectState.files.length}</Badge>
-            </SidebarGroupLabel>
+            <SidebarGroupLabel>章节结构</SidebarGroupLabel>
+            <SidebarGroupAction
+              disabled={!projectState.projectPath || actionsDisabled}
+              onClick={() => openFileDialog()}
+              title="新建章节"
+            >
+              <Plus />
+            </SidebarGroupAction>
             <SidebarGroupContent>
               {!projectState.projectPath ? (
-                <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground mx-2">
-                  <BookOpen className="size-5" />
-                  <div className="space-y-1">
-                    <p className="font-medium text-foreground">还没有打开项目</p>
-                    <p>打开本地文件夹后，这里会按实际目录结构显示章节。</p>
-                  </div>
+                <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground mx-2">
+                  <BookOpen className="size-4" />
+                  <p>打开本地文件夹后，这里会按目录结构显示章节。</p>
                 </div>
               ) : projectState.files.length === 0 ? (
-                <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground mx-2">
-                  <FilePlus2 className="size-5" />
-                  <div className="space-y-1">
-                    <p className="font-medium text-foreground">当前项目还没有 Markdown 章节</p>
-                    <p>先新建一个 `.md` 文件，创建后会自动在右侧打开。</p>
-                  </div>
+                <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground mx-2">
+                  <FilePlus2 className="size-4" />
+                  <p>
+                    暂无章节，点击右上角 <strong>+</strong> 新建。
+                  </p>
                 </div>
               ) : (
-                <SidebarMenu>
-                  {fileTree.map((node) => renderTreeNode(node, 0))}
-                </SidebarMenu>
+                <SidebarMenu>{fileTree.map((node) => renderTreeNode(node, 0))}</SidebarMenu>
               )}
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
+
+        <div className="mt-auto border-t p-2">
+          <Button
+            className="w-full justify-start"
+            disabled={!projectState.projectPath || actionsDisabled}
+            onClick={() => void refreshFiles()}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <RefreshCw className={cn("size-4", busy && "animate-spin")} />
+            刷新
+          </Button>
+        </div>
       </Sidebar>
 
       <Dialog
         onOpenChange={(open) => {
-          if (!open && !isSubmittingName) {
-            resetNameDialog()
-          }
+          if (!open && !isSubmitting) closeDialog()
         }}
-        open={isCreateDialogOpen}
+        open={dialog.open}
       >
-        <DialogContent showCloseButton={!isSubmittingName}>
-          <form className="space-y-4" onSubmit={handleSubmitNameDialog}>
+        <DialogContent showCloseButton={!isSubmitting}>
+          <form className="space-y-4" onSubmit={handleSubmit}>
             <DialogHeader>
-              <DialogTitle>新建章节</DialogTitle>
+              <DialogTitle>新建</DialogTitle>
               <DialogDescription>
-                支持输入相对路径，例如 `卷一/第一章`。文件会在已存在目录中创建并自动打开。
+                {dialog.mode === "file"
+                  ? "创建 Markdown 章节文件。路径中的父目录如不存在会自动创建。"
+                  : "创建子文件夹，完成后可在其中新建章节。"}
               </DialogDescription>
             </DialogHeader>
 
+            <Tabs
+              onValueChange={(v) => switchMode(v as DialogMode)}
+              value={dialog.mode}
+            >
+              <TabsList className="w-full">
+                <TabsTrigger className="flex-1" value="file">
+                  <FilePlus2 className="size-4" />
+                  章节文件
+                </TabsTrigger>
+                <TabsTrigger className="flex-1" value="directory">
+                  <FolderPlus className="size-4" />
+                  文件夹
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor={nameInputId}>
-                章节路径
+                {dialog.mode === "file" ? "章节路径" : "文件夹路径"}
               </label>
               <Input
                 autoFocus
                 id={nameInputId}
+                key={dialog.mode}
                 onChange={(event) => setNameValue(event.currentTarget.value)}
-                placeholder="例如：卷一/第一章"
+                placeholder={dialog.mode === "file" ? "例如：卷一/第一章" : "例如：卷一"}
                 value={nameValue}
               />
-              <p className="text-xs text-muted-foreground">
-                无需输入 `.md` 扩展名；父目录必须已存在。
-              </p>
+              {dialog.mode === "file" && (
+                <p className="text-xs text-muted-foreground">无需输入 `.md` 扩展名。</p>
+              )}
             </div>
 
             <DialogFooter>
               <Button
-                disabled={isSubmittingName}
-                onClick={resetNameDialog}
+                disabled={isSubmitting}
+                onClick={closeDialog}
                 type="button"
                 variant="outline"
               >
                 取消
               </Button>
-              <Button disabled={isSubmittingName || !nameValue.trim()} type="submit">
-                {isSubmittingName ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                创建章节
+              <Button disabled={isSubmitting || !nameValue.trim()} type="submit">
+                {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
+                {dialog.mode === "file" ? "创建章节" : "创建并继续"}
               </Button>
             </DialogFooter>
           </form>

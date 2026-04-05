@@ -27,6 +27,10 @@ export function createFile(path: string) {
   return command<FileEntry>("create_file", { path });
 }
 
+export function createDirectory(path: string) {
+  return command<void>("create_directory", { path });
+}
+
 export function renameFile(path: string, newName: string) {
   return command<FileEntry>("rename_file", { path, newName });
 }

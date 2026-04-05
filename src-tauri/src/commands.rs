@@ -73,6 +73,12 @@ pub fn create_file(path: String, state: State<'_, ProjectState>) -> AppResult<Fi
 }
 
 #[tauri::command]
+pub fn create_directory(path: String, state: State<'_, ProjectState>) -> AppResult<()> {
+    let root = state.get_root()?;
+    create_project_directory(&root, &path)
+}
+
+#[tauri::command]
 pub fn rename_file(
     path: String,
     new_name: String,
@@ -174,6 +180,33 @@ fn normalize_project_file_path(input: &str, auto_append_md: bool) -> AppResult<S
 
     if is_reserved_windows_name(stem) {
         return Err("文件名与系统保留名称冲突".to_string());
+    }
+
+    Ok(segments.join("/"))
+}
+
+fn normalize_project_directory_path(input: &str) -> AppResult<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err("目录路径不能为空".to_string());
+    }
+
+    if Path::new(trimmed).is_absolute() || trimmed.starts_with('/') || trimmed.starts_with('\\') {
+        return Err("不允许使用绝对路径".to_string());
+    }
+
+    let normalized = trimmed.replace('\\', "/");
+    let segments = normalized
+        .split('/')
+        .map(str::to_string)
+        .collect::<Vec<String>>();
+
+    if segments.is_empty() || segments.iter().any(|segment| segment.is_empty()) {
+        return Err("目录路径格式不合法".to_string());
+    }
+
+    for segment in &segments {
+        validate_path_segment(segment, false)?;
     }
 
     Ok(segments.join("/"))
@@ -295,7 +328,8 @@ fn resolve_new_project_file(root: &Path, raw_path: &str) -> AppResult<(String, P
         .ok_or_else(|| "文件路径不合法".to_string())?;
 
     if !parent.exists() {
-        return Err("目标目录不存在".to_string());
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("创建目标目录失败：{error}"))?;
     }
 
     let canonical_parent = fs::canonicalize(parent)
@@ -398,6 +432,22 @@ pub fn create_project_file(root: &Path, raw_path: &str) -> AppResult<FileEntry> 
     fs::write(&file_path, "").map_err(|error| format!("创建文件失败：{error}"))?;
     let root = canonicalize_root(root)?;
     file_entry_from_path(&root, &file_path)
+}
+
+pub fn create_project_directory(root: &Path, raw_path: &str) -> AppResult<()> {
+    let root = canonicalize_root(root)?;
+    let normalized = normalize_project_directory_path(raw_path)?;
+    let dir_path = root.join(Path::new(&normalized));
+
+    fs::create_dir_all(&dir_path)
+        .map_err(|error| format!("创建目录失败：{error}"))?;
+
+    let canonical = fs::canonicalize(&dir_path)
+        .map_err(|_| "目录创建后无法访问".to_string())?;
+
+    ensure_within_root(&root, &canonical)?;
+
+    Ok(())
 }
 
 pub fn rename_project_file(root: &Path, raw_path: &str, new_name: &str) -> AppResult<FileEntry> {

@@ -13,6 +13,7 @@ pub fn run() {
             commands::write_file,
             commands::list_files,
             commands::create_file,
+            commands::create_directory,
             commands::rename_file,
             commands::delete_file,
             commands::sync_push,

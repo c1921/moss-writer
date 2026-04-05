@@ -16,6 +16,7 @@ import type { AppState, FileEntry, SaveStatus } from "./types";
 import { pickProjectDirectory } from "../shared/tauri/dialog";
 import {
   createFile as createFileCommand,
+  createDirectory as createDirectoryCommand,
   deleteFile as deleteFileCommand,
   listFiles,
   openProject,
@@ -44,6 +45,7 @@ interface WriterAppActionsContextValue {
   refreshFiles: () => Promise<FileEntry[]>;
   selectFile: (path: string) => Promise<void>;
   createFile: (name: string) => Promise<void>;
+  createDirectory: (path: string) => Promise<void>;
   renameFile: (path: string, newName: string) => Promise<void>;
   deleteFile: (path: string) => Promise<void>;
   updateEditorContent: (content: string) => void;
@@ -76,6 +78,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     refreshFiles: async () => [],
     selectFile: async () => {},
     createFile: async () => {},
+    createDirectory: async () => {},
     renameFile: async () => {},
     deleteFile: async () => {},
     updateEditorContent: () => {},
@@ -198,6 +201,18 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     }
   };
 
+  actionsImplRef.current.createDirectory = async (path) => {
+    if (!stateRef.current.projectPath) {
+      return;
+    }
+
+    try {
+      await createDirectoryCommand(path);
+    } catch (error) {
+      dispatch({ type: "error/set", message: toMessage(error) });
+    }
+  };
+
   actionsImplRef.current.renameFile = async (path, newName) => {
     const renamingCurrentFile = stateRef.current.currentFilePath === path;
 
@@ -256,6 +271,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       refreshFiles: () => actionsImplRef.current.refreshFiles(),
       selectFile: (path) => actionsImplRef.current.selectFile(path),
       createFile: (name) => actionsImplRef.current.createFile(name),
+      createDirectory: (path) => actionsImplRef.current.createDirectory(path),
       renameFile: (path, newName) => actionsImplRef.current.renameFile(path, newName),
       deleteFile: (path) => actionsImplRef.current.deleteFile(path),
       updateEditorContent: (content) => actionsImplRef.current.updateEditorContent(content),
