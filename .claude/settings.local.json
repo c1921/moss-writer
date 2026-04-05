@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "WebFetch(domain:ui.shadcn.com)",
-      "Bash(npx shadcn@latest add sidebar --yes)",
-      "Bash(npx tsc:*)"
-    ]
-  }
-}
