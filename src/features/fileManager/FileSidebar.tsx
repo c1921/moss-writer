@@ -200,7 +200,7 @@ export function FileSidebar() {
 
   return (
     <>
-      <Sidebar collapsible="none">
+      <Sidebar collapsible="offcanvas">
         <SidebarHeader className="gap-3 border-b pb-4">
           <div className="space-y-1">
             <p className="text-xs font-medium tracking-[0.24em] text-muted-foreground uppercase">

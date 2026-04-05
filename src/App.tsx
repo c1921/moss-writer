@@ -7,7 +7,7 @@ import {
 } from "@/app/WriterAppContext";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { EditorPane } from "@/features/editor/EditorPane";
 import { FileSidebar } from "@/features/fileManager/FileSidebar";
 
@@ -19,6 +19,9 @@ function AppShell() {
     <SidebarProvider>
       <FileSidebar />
       <SidebarInset>
+        <header className="flex h-10 shrink-0 items-center border-b px-3">
+          <SidebarTrigger />
+        </header>
         {appError ? (
           <div className="p-4 pb-0">
             <Alert
