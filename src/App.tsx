@@ -7,6 +7,7 @@ import {
 } from "@/app/WriterAppContext";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { EditorPane } from "@/features/editor/EditorPane";
 import { FileSidebar } from "@/features/fileManager/FileSidebar";
 
@@ -15,12 +16,11 @@ function AppShell() {
   const { clearError } = useWriterAppActions();
 
   return (
-    <main className="min-h-screen bg-muted/30 p-4 lg:p-6">
-      <div className="mx-auto grid min-h-[calc(100svh-2rem)] max-w-[1600px] gap-4 lg:min-h-[calc(100svh-3rem)] lg:grid-cols-[320px_minmax(0,1fr)]">
-        <FileSidebar />
-
-        <div className="flex min-w-0 flex-col gap-4">
-          {appError ? (
+    <SidebarProvider>
+      <FileSidebar />
+      <SidebarInset>
+        {appError ? (
+          <div className="p-4 pb-0">
             <Alert
               className="border-destructive/30 bg-destructive/5 text-destructive"
               variant="destructive"
@@ -34,12 +34,11 @@ function AppShell() {
                 </Button>
               </AlertAction>
             </Alert>
-          ) : null}
-
-          <EditorPane />
-        </div>
-      </div>
-    </main>
+          </div>
+        ) : null}
+        <EditorPane />
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 

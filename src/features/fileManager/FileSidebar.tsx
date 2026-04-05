@@ -13,7 +13,6 @@ import {
 import { useWriterAppActions, useWriterProjectState } from "@/app/WriterAppContext"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Collapsible,
   CollapsibleContent,
@@ -28,7 +27,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from "@/components/ui/sidebar"
 import { cn } from "@/lib/utils"
 import {
   buildFileTree,
@@ -71,7 +83,6 @@ export function FileSidebar() {
 
   function openCreateDialog() {
     const parentDirectory = getParentDirectoryPath(projectState.currentFilePath)
-
     setIsCreateDialogOpen(true)
     setNameValue(parentDirectory ? `${parentDirectory}/新章节` : "新章节")
   }
@@ -80,12 +91,9 @@ export function FileSidebar() {
     event.preventDefault()
 
     const nextName = nameValue.trim()
-    if (!nextName) {
-      return
-    }
+    if (!nextName) return
 
     setIsSubmittingName(true)
-
     try {
       await createFile(nextName)
       resetNameDialog()
@@ -106,159 +114,186 @@ export function FileSidebar() {
     })
   }
 
-  function renderTreeNode(node: FileTreeNode) {
+  function renderTreeNode(node: FileTreeNode, depth = 0) {
     if (node.type === "directory") {
       const isOpen = expandedDirectories.has(node.path)
 
-      return (
-        <Collapsible
-          className="group/tree-node"
-          key={node.path}
-          onOpenChange={(open) => handleDirectoryOpenChange(node.path, open)}
-          open={isOpen}
-        >
-          <CollapsibleTrigger asChild>
-            <Button
-              className="w-full justify-start transition-none hover:bg-accent hover:text-accent-foreground"
-              size="sm"
-              type="button"
-              variant="ghost"
+      if (depth === 0) {
+        return (
+          <SidebarMenuItem key={node.path}>
+            <Collapsible
+              className="group/tree-node w-full"
+              onOpenChange={(open) => handleDirectoryOpenChange(node.path, open)}
+              open={isOpen}
             >
-              <ChevronRight className="size-4 transition-transform group-data-[state=open]/tree-node:rotate-90" />
-              <FolderIcon className="size-4" />
-              <span className="truncate">{node.name}</span>
-            </Button>
-          </CollapsibleTrigger>
+              <CollapsibleTrigger asChild>
+                <SidebarMenuButton>
+                  <ChevronRight className="size-4 transition-transform group-data-[state=open]/tree-node:rotate-90" />
+                  <FolderIcon className="size-4" />
+                  <span className="truncate">{node.name}</span>
+                </SidebarMenuButton>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarMenuSub>
+                  {node.children.map((child) => renderTreeNode(child, depth + 1))}
+                </SidebarMenuSub>
+              </CollapsibleContent>
+            </Collapsible>
+          </SidebarMenuItem>
+        )
+      }
 
-          <CollapsibleContent className="mt-1 ml-5">
-            <div className="flex flex-col gap-1">{node.children.map(renderTreeNode)}</div>
-          </CollapsibleContent>
-        </Collapsible>
+      return (
+        <SidebarMenuSubItem key={node.path}>
+          <Collapsible
+            className="group/tree-node w-full"
+            onOpenChange={(open) => handleDirectoryOpenChange(node.path, open)}
+            open={isOpen}
+          >
+            <CollapsibleTrigger asChild>
+              <SidebarMenuSubButton>
+                <ChevronRight className="size-3 transition-transform group-data-[state=open]/tree-node:rotate-90" />
+                <FolderIcon className="size-3" />
+                <span className="truncate">{node.name}</span>
+              </SidebarMenuSubButton>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <SidebarMenuSub>
+                {node.children.map((child) => renderTreeNode(child, depth + 1))}
+              </SidebarMenuSub>
+            </CollapsibleContent>
+          </Collapsible>
+        </SidebarMenuSubItem>
       )
     }
 
     const isActive = node.path === projectState.currentFilePath
 
+    if (depth === 0) {
+      return (
+        <SidebarMenuItem key={node.path}>
+          <SidebarMenuButton
+            disabled={actionsDisabled}
+            isActive={isActive}
+            onClick={() => void selectFile(node.path)}
+          >
+            <FileIcon className="size-4" />
+            <span className="truncate">{node.name}</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      )
+    }
+
     return (
-      <Button
-        className={cn("w-full justify-start gap-2", isActive ? "text-primary" : "text-foreground")}
-        disabled={actionsDisabled}
-        key={node.path}
-        onClick={() => void selectFile(node.path)}
-        size="sm"
-        type="button"
-        variant="link"
-      >
-        <FileIcon className="size-4" />
-        <span className={cn("truncate", isActive && "font-medium")}>{node.name}</span>
-      </Button>
+      <SidebarMenuSubItem key={node.path}>
+        <SidebarMenuSubButton
+          className={cn(isActive && "text-primary font-medium")}
+          isActive={isActive}
+          onClick={() => void selectFile(node.path)}
+        >
+          <FileIcon className="size-3" />
+          <span className="truncate">{node.name}</span>
+        </SidebarMenuSubButton>
+      </SidebarMenuSubItem>
     )
   }
 
   return (
     <>
-      <aside className="flex min-h-[22rem] min-w-0">
-        <Card className="flex min-h-full flex-1 border-0 shadow-sm">
-          <CardHeader className="gap-3 border-b">
-            <div className="space-y-1">
-              <p className="text-xs font-medium tracking-[0.24em] text-muted-foreground uppercase">
-                Moss Writer
-              </p>
-                <CardTitle className="truncate text-2xl font-semibold tracking-tight">
-                {projectState.projectPath
-                  ? getBaseName(projectState.projectPath)
-                  : "极简小说编辑器"}
-              </CardTitle>
-            </div>
+      <Sidebar collapsible="none">
+        <SidebarHeader className="gap-3 border-b pb-4">
+          <div className="space-y-1">
+            <p className="text-xs font-medium tracking-[0.24em] text-muted-foreground uppercase">
+              Moss Writer
+            </p>
+            <p className="truncate text-2xl font-semibold tracking-tight">
+              {projectState.projectPath
+                ? getBaseName(projectState.projectPath)
+                : "极简小说编辑器"}
+            </p>
+          </div>
 
-            <div className="flex items-start gap-2 text-sm text-muted-foreground">
-              <FolderOpen className="mt-0.5 size-4 shrink-0" />
-              <p className="line-clamp-2 break-all">
-                {projectState.projectPath ?? "选择一个本地文件夹作为小说项目"}
-              </p>
-            </div>
+          <div className="flex items-start gap-2 text-sm text-muted-foreground">
+            <FolderOpen className="mt-0.5 size-4 shrink-0" />
+            <p className="line-clamp-2 break-all">
+              {projectState.projectPath ?? "选择一个本地文件夹作为小说项目"}
+            </p>
+          </div>
 
-            <Badge className="w-fit" variant="secondary">
-              {projectState.files.length} 个章节
-            </Badge>
-          </CardHeader>
+          <Badge className="w-fit" variant="secondary">
+            {projectState.files.length} 个章节
+          </Badge>
 
-          <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-            <div className="grid gap-2 pt-0">
+          <div className="grid gap-2">
+            <Button
+              className="justify-start"
+              disabled={projectState.isProjectLoading || isSubmittingName}
+              onClick={() => void openProjectPicker()}
+              type="button"
+            >
+              {projectState.isProjectLoading ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <FolderOpen className="size-4" />
+              )}
+              {projectState.projectPath ? "切换项目" : "打开项目"}
+            </Button>
+
+            <div className="grid grid-cols-2 gap-2">
               <Button
-                className="justify-start"
-                disabled={projectState.isProjectLoading || isSubmittingName}
-                onClick={() => void openProjectPicker()}
+                disabled={!projectState.projectPath || actionsDisabled}
+                onClick={openCreateDialog}
                 type="button"
+                variant="outline"
               >
-                {projectState.isProjectLoading ? (
-                  <LoaderCircle className="size-4 animate-spin" />
-                ) : (
-                  <FolderOpen className="size-4" />
-                )}
-                {projectState.projectPath ? "切换项目" : "打开项目"}
+                <FilePlus2 className="size-4" />
+                新建章节
               </Button>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  disabled={!projectState.projectPath || actionsDisabled}
-                  onClick={openCreateDialog}
-                  type="button"
-                  variant="outline"
-                >
-                  <FilePlus2 className="size-4" />
-                  新建章节
-                </Button>
-                <Button
-                  disabled={!projectState.projectPath || actionsDisabled}
-                  onClick={() => void refreshFiles()}
-                  type="button"
-                  variant="outline"
-                >
-                  <RefreshCw className={cn("size-4", busy && "animate-spin")} />
-                  刷新
-                </Button>
-              </div>
+              <Button
+                disabled={!projectState.projectPath || actionsDisabled}
+                onClick={() => void refreshFiles()}
+                type="button"
+                variant="outline"
+              >
+                <RefreshCw className={cn("size-4", busy && "animate-spin")} />
+                刷新
+              </Button>
             </div>
+          </div>
+        </SidebarHeader>
 
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">章节结构</p>
-                <p className="text-xs text-muted-foreground">
-                  按项目实际目录结构递归显示 `.md` 文件
-                </p>
-              </div>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel className="flex items-center justify-between">
+              章节结构
               <Badge variant="outline">{projectState.files.length}</Badge>
-            </div>
-
-            {!projectState.projectPath ? (
-              <div className="flex flex-1 items-center">
-                <div className="flex w-full flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              {!projectState.projectPath ? (
+                <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground mx-2">
                   <BookOpen className="size-5" />
                   <div className="space-y-1">
                     <p className="font-medium text-foreground">还没有打开项目</p>
                     <p>打开本地文件夹后，这里会按实际目录结构显示章节。</p>
                   </div>
                 </div>
-              </div>
-            ) : projectState.files.length === 0 ? (
-              <div className="flex flex-1 items-center">
-                <div className="flex w-full flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+              ) : projectState.files.length === 0 ? (
+                <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground mx-2">
                   <FilePlus2 className="size-5" />
                   <div className="space-y-1">
                     <p className="font-medium text-foreground">当前项目还没有 Markdown 章节</p>
                     <p>先新建一个 `.md` 文件，创建后会自动在右侧打开。</p>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <ScrollArea className="min-h-0 flex-1">
-                <div className="flex flex-col gap-1">{fileTree.map(renderTreeNode)}</div>
-              </ScrollArea>
-            )}
-          </CardContent>
-        </Card>
-      </aside>
+              ) : (
+                <SidebarMenu>
+                  {fileTree.map((node) => renderTreeNode(node, 0))}
+                </SidebarMenu>
+              )}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+      </Sidebar>
 
       <Dialog
         onOpenChange={(open) => {

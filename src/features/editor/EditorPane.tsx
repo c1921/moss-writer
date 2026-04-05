@@ -7,7 +7,6 @@ import {
   useWriterProjectState,
 } from "@/app/WriterAppContext";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { getBaseName, stripMarkdownExtension } from "@/shared/utils/fileNames";
@@ -81,19 +80,17 @@ function renderEmptyState(
   icon: ReactElement,
 ) {
   return (
-    <section className="flex min-h-[22rem] flex-1">
-      <Card className="flex flex-1 items-center justify-center border-0 shadow-sm">
-        <CardContent className="flex max-w-md flex-col items-center gap-4 py-10 text-center">
-          <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            {icon}
-          </div>
-          <Badge variant="outline">{badgeLabel}</Badge>
-          <div className="space-y-2">
-            <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-            <p className="text-sm leading-6 text-muted-foreground">{description}</p>
-          </div>
-        </CardContent>
-      </Card>
+    <section className="flex flex-1 items-center justify-center">
+      <div className="flex max-w-md flex-col items-center gap-4 py-10 text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          {icon}
+        </div>
+        <Badge variant="outline">{badgeLabel}</Badge>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
+          <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+        </div>
+      </div>
     </section>
   );
 }
@@ -142,38 +139,36 @@ export function EditorPane() {
   }
 
   return (
-    <section className="flex min-h-[22rem] flex-1">
-      <Card className="flex min-h-full flex-1 border-0 shadow-sm">
-        <CardHeader className="gap-3 border-b">
-          <div className="space-y-1">
-            <p className="text-xs font-medium tracking-[0.24em] text-muted-foreground uppercase">
-              当前章节
-            </p>
-            <CardTitle className="text-2xl font-semibold tracking-tight">
-              {currentFileName}
-            </CardTitle>
-            <p className="truncate text-sm text-muted-foreground">{editorState.currentFilePath}</p>
-          </div>
+    <section className="flex flex-1 flex-col h-full">
+      <header className="flex flex-col gap-3 border-b px-6 py-4">
+        <div className="space-y-1">
+          <p className="text-xs font-medium tracking-[0.24em] text-muted-foreground uppercase">
+            当前章节
+          </p>
+          <p className="text-2xl font-semibold tracking-tight">
+            {currentFileName}
+          </p>
+          <p className="truncate text-sm text-muted-foreground">{editorState.currentFilePath}</p>
+        </div>
 
-          <div className="flex items-center gap-2">
-            <Badge className={cn("border", saveBadgeClassName)} variant="outline">
-              {saveLabel}
-            </Badge>
-          </div>
-        </CardHeader>
+        <div className="flex items-center gap-2">
+          <Badge className={cn("border", saveBadgeClassName)} variant="outline">
+            {saveLabel}
+          </Badge>
+        </div>
+      </header>
 
-        <CardContent className="flex min-h-0 flex-1 flex-col pt-4">
-          <Textarea
-            aria-label="小说正文编辑区"
-            className="min-h-[60vh] flex-1 resize-none border-0 px-1 py-0 text-base leading-8 shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-lg"
-            disabled={editorState.isFileLoading}
-            onChange={(event) => updateEditorContent(event.currentTarget.value)}
-            placeholder="开始写作..."
-            spellCheck={false}
-            value={editorState.editorContent}
-          />
-        </CardContent>
-      </Card>
+      <div className="flex flex-1 flex-col px-6 py-4">
+        <Textarea
+          aria-label="小说正文编辑区"
+          className="flex-1 resize-none border-0 px-1 py-0 text-base leading-8 shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-lg"
+          disabled={editorState.isFileLoading}
+          onChange={(event) => updateEditorContent(event.currentTarget.value)}
+          placeholder="开始写作..."
+          spellCheck={false}
+          value={editorState.editorContent}
+        />
+      </div>
     </section>
   );
 }
