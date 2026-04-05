@@ -1,4 +1,4 @@
-import { useMemo, type ReactElement } from "react";
+import type { ReactElement } from "react";
 import { BookOpen, FileText } from "lucide-react";
 
 import {
@@ -8,70 +8,6 @@ import {
 } from "@/app/WriterAppContext";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
-import { getBaseName, stripMarkdownExtension } from "@/shared/utils/fileNames";
-
-function renderSaveStatus(
-  saveStatus: string,
-  isDirty: boolean,
-  currentFilePath: string | null,
-  isFileLoading: boolean,
-) {
-  if (!currentFilePath) {
-    return "未打开章节";
-  }
-
-  if (isFileLoading) {
-    return "正在打开";
-  }
-
-  if (saveStatus === "saving") {
-    return "正在保存";
-  }
-
-  if (saveStatus === "error") {
-    return "保存失败";
-  }
-
-  if (isDirty) {
-    return "未保存";
-  }
-
-  if (saveStatus === "saved") {
-    return "已保存";
-  }
-
-  return "就绪";
-}
-
-function getSaveBadgeClass(
-  saveStatus: string,
-  isDirty: boolean,
-  currentFilePath: string | null,
-  isFileLoading: boolean,
-) {
-  if (!currentFilePath) {
-    return "border-border/70 text-muted-foreground";
-  }
-
-  if (isFileLoading || saveStatus === "saving") {
-    return "border-transparent bg-secondary text-secondary-foreground";
-  }
-
-  if (saveStatus === "error") {
-    return "border-transparent bg-destructive/10 text-destructive";
-  }
-
-  if (isDirty) {
-    return "border-transparent bg-amber-500/10 text-amber-700 dark:text-amber-300";
-  }
-
-  if (saveStatus === "saved") {
-    return "border-transparent bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
-  }
-
-  return "border-border/70 text-muted-foreground";
-}
 
 function renderEmptyState(
   title: string,
@@ -99,26 +35,6 @@ export function EditorPane() {
   const projectState = useWriterProjectState();
   const editorState = useWriterEditorState();
   const { updateEditorContent } = useWriterAppActions();
-  const saveLabel = renderSaveStatus(
-    editorState.saveStatus,
-    editorState.isDirty,
-    editorState.currentFilePath,
-    editorState.isFileLoading,
-  );
-  const saveBadgeClassName = getSaveBadgeClass(
-    editorState.saveStatus,
-    editorState.isDirty,
-    editorState.currentFilePath,
-    editorState.isFileLoading,
-  );
-  const currentFileName = useMemo(() => {
-    if (!editorState.currentFilePath) {
-      return null;
-    }
-
-    const matchedFile = projectState.files.find((file) => file.path === editorState.currentFilePath);
-    return stripMarkdownExtension(matchedFile?.name ?? getBaseName(editorState.currentFilePath));
-  }, [projectState.files, editorState.currentFilePath]);
 
   if (!projectState.projectPath) {
     return renderEmptyState(
@@ -139,25 +55,7 @@ export function EditorPane() {
   }
 
   return (
-    <section className="flex flex-1 flex-col h-full">
-      <header className="flex flex-col gap-3 border-b px-6 py-4">
-        <div className="space-y-1">
-          <p className="text-xs font-medium tracking-[0.24em] text-muted-foreground uppercase">
-            当前章节
-          </p>
-          <p className="text-2xl font-semibold tracking-tight">
-            {currentFileName}
-          </p>
-          <p className="truncate text-sm text-muted-foreground">{editorState.currentFilePath}</p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Badge className={cn("border", saveBadgeClassName)} variant="outline">
-            {saveLabel}
-          </Badge>
-        </div>
-      </header>
-
+    <section className="flex h-full flex-1 flex-col">
       <div className="flex flex-1 flex-col px-6 py-4">
         <Textarea
           aria-label="小说正文编辑区"

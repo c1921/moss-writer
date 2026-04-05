@@ -9,6 +9,7 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { EditorPane } from "@/features/editor/EditorPane";
+import { EditorSaveStatusBadge } from "@/features/editor/EditorSaveStatusBadge";
 import { FileSidebar } from "@/features/fileManager/FileSidebar";
 
 function AppShell() {
@@ -19,8 +20,9 @@ function AppShell() {
     <SidebarProvider>
       <FileSidebar />
       <SidebarInset>
-        <header className="flex h-10 shrink-0 items-center border-b px-3">
+        <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
           <SidebarTrigger />
+          <EditorSaveStatusBadge className="ml-auto" />
         </header>
         {appError ? (
           <div className="p-4 pb-0">
