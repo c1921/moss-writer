@@ -1,5 +1,6 @@
 mod commands;
 mod state;
+mod sync;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +17,9 @@ pub fn run() {
             commands::create_directory,
             commands::rename_file,
             commands::delete_file,
+            commands::get_sync_settings,
+            commands::save_sync_settings,
+            commands::test_sync_connection,
             commands::sync_push,
             commands::sync_pull
         ])

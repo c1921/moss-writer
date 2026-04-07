@@ -5,6 +5,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type PropsWithChildren,
 } from "react";
 
@@ -13,16 +14,30 @@ import { useFileLoader } from "./hooks/useFileLoader";
 import { useProjectSession } from "./hooks/useProjectSession";
 import { appReducer, initialAppState } from "./reducer";
 import type { AppState, FileEntry, SaveStatus } from "./types";
+import {
+  DEFAULT_WEB_DAV_SETTINGS,
+  type WebDavSettings,
+} from "../features/settings/types";
 import { pickProjectDirectory } from "../shared/tauri/dialog";
 import {
   createFile as createFileCommand,
   createDirectory as createDirectoryCommand,
   deleteFile as deleteFileCommand,
+  getSyncSettings as getSyncSettingsCommand,
   listFiles,
   openProject,
   renameFile as renameFileCommand,
+  saveSyncSettings as saveSyncSettingsCommand,
+  syncPull as syncPullCommand,
+  syncPush as syncPushCommand,
+  testSyncConnection as testSyncConnectionCommand,
 } from "../shared/tauri/commands";
 import { listenProjectFilesChanged } from "../shared/tauri/events";
+import type {
+  SyncDirection,
+  SyncResponse,
+  SyncState,
+} from "../features/sync/types";
 
 interface WriterProjectStateContextValue {
   projectPath: string | null;
@@ -49,13 +64,29 @@ interface WriterAppActionsContextValue {
   renameFile: (path: string, newName: string) => Promise<void>;
   deleteFile: (path: string) => Promise<void>;
   updateEditorContent: (content: string) => void;
+  flushPendingSave: () => Promise<boolean>;
+  refreshProjectFiles: (changedPaths?: string[]) => Promise<void>;
   clearError: () => void;
+}
+
+interface WriterSyncStateContextValue extends SyncState {
+  settings: WebDavSettings;
+}
+
+interface WriterSyncActionsContextValue {
+  reloadSyncSettings: () => Promise<void>;
+  saveSyncSettings: (settings: WebDavSettings) => Promise<WebDavSettings>;
+  testSyncConnection: (settings: WebDavSettings) => Promise<SyncResponse | null>;
+  pullSync: () => Promise<SyncResponse | null>;
+  pushSync: () => Promise<SyncResponse | null>;
 }
 
 const WriterProjectStateContext = createContext<WriterProjectStateContextValue | null>(null);
 const WriterEditorStateContext = createContext<WriterEditorStateContextValue | null>(null);
 const WriterAppErrorContext = createContext<string | null | undefined>(undefined);
 const WriterAppActionsContext = createContext<WriterAppActionsContextValue | null>(null);
+const WriterSyncStateContext = createContext<WriterSyncStateContextValue | null>(null);
+const WriterSyncActionsContext = createContext<WriterSyncActionsContextValue | null>(null);
 
 function toMessage(error: unknown) {
   if (error instanceof Error) {
@@ -71,7 +102,18 @@ function toMessage(error: unknown) {
 
 export function WriterAppProvider({ children }: PropsWithChildren) {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
+  const [syncSettings, setSyncSettings] = useState<WebDavSettings>(DEFAULT_WEB_DAV_SETTINGS);
+  const [syncState, setSyncState] = useState<SyncState>({
+    isSettingsLoading: true,
+    isSyncing: false,
+    activeDirection: null,
+    lastDirection: null,
+    lastResult: null,
+    lastSuccessfulSyncAt: null,
+  });
   const stateRef = useRef<AppState>(state);
+  const syncSettingsRef = useRef<WebDavSettings>(DEFAULT_WEB_DAV_SETTINGS);
+  const syncStateRef = useRef<SyncState>(syncState);
   const actionsImplRef = useRef<WriterAppActionsContextValue>({
     openProjectPicker: async () => {},
     openProjectPath: async () => false,
@@ -81,12 +123,26 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     renameFile: async () => {},
     deleteFile: async () => {},
     updateEditorContent: () => {},
+    flushPendingSave: async () => true,
+    refreshProjectFiles: async () => {},
     clearError: () => {},
   });
   const actionsRef = useRef<WriterAppActionsContextValue | null>(null);
+  const syncActionsImplRef = useRef<WriterSyncActionsContextValue>({
+    reloadSyncSettings: async () => {},
+    saveSyncSettings: async () => DEFAULT_WEB_DAV_SETTINGS,
+    testSyncConnection: async () => null,
+    pullSync: async () => null,
+    pushSync: async () => null,
+  });
+  const syncActionsRef = useRef<WriterSyncActionsContextValue | null>(null);
   const syncProjectFilesImplRef = useRef<(changedPaths?: string[]) => Promise<FileEntry[]>>(
     async () => [],
   );
+  const loadSyncSettingsPromiseRef = useRef<Promise<WebDavSettings> | null>(null);
+  const syncRequestPromiseRef = useRef<Promise<SyncResponse | null> | null>(null);
+  const lastPushCompletedAtRef = useRef<number | null>(null);
+  const previousSaveStatusRef = useRef<SaveStatus>(state.saveStatus);
   const fileChangeSyncTimerRef = useRef<number | null>(null);
   const queuedChangedPathsRef = useRef<Set<string>>(new Set());
   const queuedProjectPathRef = useRef<string | null>(null);
@@ -94,6 +150,14 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    syncSettingsRef.current = syncSettings;
+  }, [syncSettings]);
+
+  useEffect(() => {
+    syncStateRef.current = syncState;
+  }, [syncState]);
 
   const { invalidateFileLoad, loadFile } = useFileLoader({
     dispatch,
@@ -114,6 +178,197 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
     queuedChangedPathsRef.current.clear();
     queuedProjectPathRef.current = null;
+  }
+
+  function setSyncStateWith(update: SyncState | ((current: SyncState) => SyncState)) {
+    setSyncState((current) =>
+      typeof update === "function" ? (update as (current: SyncState) => SyncState)(current) : update,
+    );
+  }
+
+  function buildSyncErrorResponse(message: string): SyncResponse {
+    return {
+      status: "error",
+      message,
+      changedPaths: [],
+      changedDirectories: [],
+      conflicts: [],
+      skippedDeletionPaths: [],
+      syncedAt: null,
+    };
+  }
+
+  async function loadSyncSettingsInternal(surfaceAppError = false) {
+    if (loadSyncSettingsPromiseRef.current) {
+      return loadSyncSettingsPromiseRef.current;
+    }
+
+    setSyncStateWith((current) => ({
+      ...current,
+      isSettingsLoading: true,
+    }));
+
+    const pending = (async () => {
+      try {
+        const nextSettings = await getSyncSettingsCommand();
+        setSyncSettings(nextSettings);
+        return nextSettings;
+      } catch (error) {
+        if (surfaceAppError) {
+          dispatch({ type: "error/set", message: toMessage(error) });
+        }
+        throw error;
+      } finally {
+        setSyncStateWith((current) => ({
+          ...current,
+          isSettingsLoading: false,
+        }));
+        loadSyncSettingsPromiseRef.current = null;
+      }
+    })();
+
+    loadSyncSettingsPromiseRef.current = pending;
+    return pending;
+  }
+
+  async function performSync(
+    direction: Exclude<SyncDirection, "test">,
+    options: {
+      allowWithoutProjectState?: boolean;
+      skipFlush?: boolean;
+      refreshAfterPull?: boolean;
+      surfaceAppError?: boolean;
+    } = {},
+  ) {
+    if (syncRequestPromiseRef.current) {
+      return syncRequestPromiseRef.current;
+    }
+
+    const pending = (async () => {
+      const {
+        allowWithoutProjectState = false,
+        skipFlush = false,
+        refreshAfterPull = true,
+        surfaceAppError = false,
+      } = options;
+
+      if (!allowWithoutProjectState && !stateRef.current.projectPath) {
+        return null;
+      }
+
+      if (!skipFlush) {
+        const canContinue = await flushPendingSave();
+        if (!canContinue) {
+          return null;
+        }
+      }
+
+      try {
+        await loadSyncSettingsInternal(surfaceAppError);
+
+        setSyncStateWith((current) => ({
+          ...current,
+          isSyncing: true,
+          activeDirection: direction,
+          lastDirection: direction,
+        }));
+
+        const response = direction === "pull" ? await syncPullCommand() : await syncPushCommand();
+
+        setSyncStateWith((current) => ({
+          ...current,
+          isSyncing: false,
+          activeDirection: null,
+          lastDirection: direction,
+          lastResult: response,
+          lastSuccessfulSyncAt:
+            response.status === "error"
+              ? current.lastSuccessfulSyncAt
+              : response.syncedAt ?? current.lastSuccessfulSyncAt,
+        }));
+
+        if (direction === "push" && response.status !== "error") {
+          lastPushCompletedAtRef.current = response.syncedAt ?? Date.now();
+        }
+
+        if (direction === "pull" && refreshAfterPull) {
+          await syncProjectFilesImplRef.current(response.changedPaths);
+        }
+
+        return response;
+      } catch (error) {
+        const errorResponse = buildSyncErrorResponse(toMessage(error));
+
+        setSyncStateWith((current) => ({
+          ...current,
+          isSyncing: false,
+          activeDirection: null,
+          lastDirection: direction,
+          lastResult: errorResponse,
+        }));
+
+        if (surfaceAppError) {
+          dispatch({ type: "error/set", message: errorResponse.message });
+        }
+
+        return errorResponse;
+      } finally {
+        syncRequestPromiseRef.current = null;
+      }
+    })();
+
+    syncRequestPromiseRef.current = pending;
+    return pending;
+  }
+
+  async function performSyncTest(settings: WebDavSettings) {
+    if (syncRequestPromiseRef.current) {
+      return syncRequestPromiseRef.current;
+    }
+
+    const pending = (async () => {
+      try {
+        setSyncStateWith((current) => ({
+          ...current,
+          isSyncing: true,
+          activeDirection: "test",
+          lastDirection: "test",
+        }));
+
+        const response = await testSyncConnectionCommand(settings);
+
+        setSyncStateWith((current) => ({
+          ...current,
+          isSyncing: false,
+          activeDirection: null,
+          lastDirection: "test",
+          lastResult: response,
+          lastSuccessfulSyncAt:
+            response.status === "error"
+              ? current.lastSuccessfulSyncAt
+              : response.syncedAt ?? current.lastSuccessfulSyncAt,
+        }));
+
+        return response;
+      } catch (error) {
+        const errorResponse = buildSyncErrorResponse(toMessage(error));
+
+        setSyncStateWith((current) => ({
+          ...current,
+          isSyncing: false,
+          activeDirection: null,
+          lastDirection: "test",
+          lastResult: errorResponse,
+        }));
+
+        return errorResponse;
+      } finally {
+        syncRequestPromiseRef.current = null;
+      }
+    })();
+
+    syncRequestPromiseRef.current = pending;
+    return pending;
   }
 
   syncProjectFilesImplRef.current = async (changedPaths = []) => {
@@ -149,6 +404,8 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
         files[0]
       ) {
         await loadFile(files[0].path);
+      } else if (!previousCurrentFilePath && files[0]) {
+        await loadFile(files[0].path);
       }
 
       return files;
@@ -170,7 +427,28 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     dispatch({ type: "project/openStarted" });
 
     try {
-      const snapshot = await openProject(projectPath);
+      let snapshot = await openProject(projectPath);
+
+      const resolvedSettings = await loadSyncSettingsInternal();
+      if (resolvedSettings.enabled && resolvedSettings.autoPullOnOpen) {
+        const pullResponse = await performSync("pull", {
+          allowWithoutProjectState: true,
+          skipFlush: true,
+          refreshAfterPull: false,
+          surfaceAppError: true,
+        });
+
+        if (
+          pullResponse &&
+          (pullResponse.changedPaths.length > 0 || pullResponse.changedDirectories.length > 0)
+        ) {
+          snapshot = {
+            projectPath: snapshot.projectPath,
+            files: await listFiles(projectPath),
+          };
+        }
+      }
+
       dispatch({ type: "project/opened", snapshot });
 
       const targetFile =
@@ -291,8 +569,42 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     dispatch({ type: "editor/contentChanged", content });
   };
 
+  actionsImplRef.current.flushPendingSave = async () => {
+    return flushPendingSave();
+  };
+
+  actionsImplRef.current.refreshProjectFiles = async (changedPaths = []) => {
+    await syncProjectFilesImplRef.current(changedPaths);
+  };
+
   actionsImplRef.current.clearError = () => {
     dispatch({ type: "error/clear" });
+  };
+
+  syncActionsImplRef.current.reloadSyncSettings = async () => {
+    await loadSyncSettingsInternal();
+  };
+
+  syncActionsImplRef.current.saveSyncSettings = async (settings) => {
+    const nextSettings = await saveSyncSettingsCommand(settings);
+    setSyncSettings(nextSettings);
+    setSyncStateWith((current) => ({
+      ...current,
+      isSettingsLoading: false,
+    }));
+    return nextSettings;
+  };
+
+  syncActionsImplRef.current.testSyncConnection = async (settings) => {
+    return performSyncTest(settings);
+  };
+
+  syncActionsImplRef.current.pullSync = async () => {
+    return performSync("pull");
+  };
+
+  syncActionsImplRef.current.pushSync = async () => {
+    return performSync("push");
   };
 
   if (!actionsRef.current) {
@@ -306,9 +618,66 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       renameFile: (path, newName) => actionsImplRef.current.renameFile(path, newName),
       deleteFile: (path) => actionsImplRef.current.deleteFile(path),
       updateEditorContent: (content) => actionsImplRef.current.updateEditorContent(content),
+      flushPendingSave: () => actionsImplRef.current.flushPendingSave(),
+      refreshProjectFiles: (changedPaths) => actionsImplRef.current.refreshProjectFiles(changedPaths),
       clearError: () => actionsImplRef.current.clearError(),
     };
   }
+
+  if (!syncActionsRef.current) {
+    syncActionsRef.current = {
+      reloadSyncSettings: () => syncActionsImplRef.current.reloadSyncSettings(),
+      saveSyncSettings: (settings) => syncActionsImplRef.current.saveSyncSettings(settings),
+      testSyncConnection: (settings) => syncActionsImplRef.current.testSyncConnection(settings),
+      pullSync: () => syncActionsImplRef.current.pullSync(),
+      pushSync: () => syncActionsImplRef.current.pushSync(),
+    };
+  }
+
+  useEffect(() => {
+    void loadSyncSettingsInternal();
+  }, []);
+
+  useEffect(() => {
+    const previousSaveStatus = previousSaveStatusRef.current;
+    previousSaveStatusRef.current = state.saveStatus;
+
+    if (previousSaveStatus === "saved" || state.saveStatus !== "saved") {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const settings = await loadSyncSettingsInternal();
+        const snapshot = stateRef.current;
+
+        if (
+          !snapshot.projectPath ||
+          snapshot.isDirty ||
+          !settings.enabled ||
+          !settings.autoPushOnSave
+        ) {
+          return;
+        }
+
+        const minIntervalMs = settings.autoPushMinIntervalSeconds * 1000;
+        const now = Date.now();
+        if (
+          lastPushCompletedAtRef.current !== null &&
+          now - lastPushCompletedAtRef.current < minIntervalMs
+        ) {
+          return;
+        }
+
+        await performSync("push", {
+          skipFlush: true,
+          surfaceAppError: true,
+        });
+      } catch (error) {
+        dispatch({ type: "error/set", message: toMessage(error) });
+      }
+    })();
+  }, [state.saveStatus]);
 
   useEffect(() => {
     let disposed = false;
@@ -409,15 +778,26 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       state.isFileLoading,
     ],
   );
+  const syncStateValue = useMemo<WriterSyncStateContextValue>(
+    () => ({
+      ...syncState,
+      settings: syncSettings,
+    }),
+    [syncSettings, syncState],
+  );
 
   return (
     <WriterAppActionsContext.Provider value={actionsRef.current}>
       <WriterAppErrorContext.Provider value={state.appError}>
-        <WriterProjectStateContext.Provider value={projectStateValue}>
-          <WriterEditorStateContext.Provider value={editorStateValue}>
-            {children}
-          </WriterEditorStateContext.Provider>
-        </WriterProjectStateContext.Provider>
+        <WriterSyncActionsContext.Provider value={syncActionsRef.current}>
+          <WriterSyncStateContext.Provider value={syncStateValue}>
+            <WriterProjectStateContext.Provider value={projectStateValue}>
+              <WriterEditorStateContext.Provider value={editorStateValue}>
+                {children}
+              </WriterEditorStateContext.Provider>
+            </WriterProjectStateContext.Provider>
+          </WriterSyncStateContext.Provider>
+        </WriterSyncActionsContext.Provider>
       </WriterAppErrorContext.Provider>
     </WriterAppActionsContext.Provider>
   );
@@ -458,6 +838,26 @@ export function useWriterAppActions() {
 
   if (!context) {
     throw new Error("useWriterAppActions 必须在 WriterAppProvider 内使用");
+  }
+
+  return context;
+}
+
+export function useWriterSyncState() {
+  const context = useContext(WriterSyncStateContext);
+
+  if (!context) {
+    throw new Error("useWriterSyncState 必须在 WriterAppProvider 内使用");
+  }
+
+  return context;
+}
+
+export function useWriterSyncActions() {
+  const context = useContext(WriterSyncActionsContext);
+
+  if (!context) {
+    throw new Error("useWriterSyncActions 必须在 WriterAppProvider 内使用");
   }
 
   return context;

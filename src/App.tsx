@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { TriangleAlert } from "lucide-react";
 
 import {
@@ -12,20 +13,24 @@ import { EditorCurrentFileName } from "@/features/editor/EditorCurrentFileName";
 import { EditorPane } from "@/features/editor/EditorPane";
 import { EditorSaveStatusBadge } from "@/features/editor/EditorSaveStatusBadge";
 import { FileSidebar } from "@/features/fileManager/FileSidebar";
+import { SettingsDialog } from "@/features/settings/SettingsDialog";
+import { SyncStatusButton } from "@/features/sync/SyncStatusButton";
 
 function AppShell() {
   const appError = useWriterAppError();
   const { clearError } = useWriterAppActions();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <SidebarProvider>
-      <FileSidebar />
+      <FileSidebar onOpenSettings={() => setSettingsOpen(true)} />
       <SidebarInset>
         <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
           <SidebarTrigger className="shrink-0" />
           <div className="min-w-0 flex-1">
             <EditorCurrentFileName />
           </div>
+          <SyncStatusButton onClick={() => setSettingsOpen(true)} />
           <EditorSaveStatusBadge className="shrink-0" />
         </header>
         {appError ? (
@@ -46,6 +51,7 @@ function AppShell() {
           </div>
         ) : null}
         <EditorPane />
+        <SettingsDialog onOpenChange={setSettingsOpen} open={settingsOpen} />
       </SidebarInset>
     </SidebarProvider>
   );

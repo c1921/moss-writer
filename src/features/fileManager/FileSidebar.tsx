@@ -63,7 +63,11 @@ interface DialogState {
 
 const CLOSED_DIALOG: DialogState = { open: false, mode: "file", initialPath: "" }
 
-export function FileSidebar() {
+interface FileSidebarProps {
+  onOpenSettings: () => void
+}
+
+export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
   const projectState = useWriterProjectState()
   const { openProjectPicker, selectFile, createFile, createDirectory } = useWriterAppActions()
   const [dialog, setDialog] = useState<DialogState>(CLOSED_DIALOG)
@@ -316,7 +320,8 @@ export function FileSidebar() {
         <div className="mt-auto border-t p-2">
           <Button
             className="w-full justify-start"
-            disabled
+            disabled={actionsDisabled}
+            onClick={onOpenSettings}
             size="sm"
             type="button"
             variant="ghost"

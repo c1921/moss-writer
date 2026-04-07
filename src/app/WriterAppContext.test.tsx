@@ -11,6 +11,9 @@ vi.mock("@/shared/tauri/commands", () => ({
   createDirectory: vi.fn(),
   renameFile: vi.fn(),
   deleteFile: vi.fn(),
+  getSyncSettings: vi.fn(),
+  saveSyncSettings: vi.fn(),
+  testSyncConnection: vi.fn(),
   syncPush: vi.fn(),
   syncPull: vi.fn(),
 }));
@@ -105,6 +108,9 @@ describe("WriterAppProvider", () => {
   const createFileMock = vi.mocked(commands.createFile);
   const renameFileMock = vi.mocked(commands.renameFile);
   const deleteFileMock = vi.mocked(commands.deleteFile);
+  const getSyncSettingsMock = vi.mocked(commands.getSyncSettings);
+  const syncPushMock = vi.mocked(commands.syncPush);
+  const syncPullMock = vi.mocked(commands.syncPull);
   const listenProjectFilesChangedMock = vi.mocked(events.listenProjectFilesChanged);
   const unlistenMock = vi.fn();
   let projectFilesChangedHandler:
@@ -112,9 +118,19 @@ describe("WriterAppProvider", () => {
     | null = null;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     localStorage.clear();
     projectFilesChangedHandler = null;
     unlistenMock.mockReset();
+    getSyncSettingsMock.mockResolvedValue({
+      enabled: false,
+      rootUrl: "",
+      username: "",
+      password: "",
+      autoPullOnOpen: true,
+      autoPushOnSave: true,
+      autoPushMinIntervalSeconds: 120,
+    });
     listenProjectFilesChangedMock.mockImplementation(async (handler) => {
       projectFilesChangedHandler = handler;
       return unlistenMock;
@@ -291,6 +307,95 @@ describe("WriterAppProvider", () => {
     await waitFor(() => expect(openProjectMock).toHaveBeenCalledWith("/project"));
     await waitFor(() => expect(screen.getByTestId("current-file").textContent).toBe("first.md"));
     expect(screen.getByTestId("content").textContent).toBe("restored content");
+  });
+
+  it("打开项目时会按设置自动拉取后再载入最新文件", async () => {
+    const user = userEvent.setup();
+
+    getSyncSettingsMock.mockResolvedValue({
+      enabled: true,
+      rootUrl: "https://dav.example.com/root",
+      username: "writer",
+      password: "secret",
+      autoPullOnOpen: true,
+      autoPushOnSave: false,
+      autoPushMinIntervalSeconds: 120,
+    });
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [{ name: "first.md", path: "first.md" }],
+    });
+    syncPullMock.mockResolvedValue({
+      status: "success",
+      message: "已拉取 1 项更新",
+      changedPaths: ["remote.md"],
+      changedDirectories: [],
+      conflicts: [],
+      skippedDeletionPaths: [],
+      syncedAt: 1,
+    });
+    listFilesMock.mockResolvedValue([{ name: "remote.md", path: "remote.md" }]);
+    readFileMock.mockImplementation(async (path) => {
+      if (path === "remote.md") {
+        return "remote content";
+      }
+
+      throw new Error(`unexpected path: ${path}`);
+    });
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+
+    await waitFor(() => expect(syncPullMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(listFilesMock).toHaveBeenCalledWith("/project"));
+    await waitFor(() => expect(screen.getByTestId("current-file").textContent).toBe("remote.md"));
+    expect(screen.getByTestId("content").textContent).toBe("remote content");
+  });
+
+  it("本地自动保存成功后在满足间隔时自动推送", async () => {
+    const user = userEvent.setup();
+
+    getSyncSettingsMock.mockResolvedValue({
+      enabled: true,
+      rootUrl: "https://dav.example.com/root",
+      username: "writer",
+      password: "secret",
+      autoPullOnOpen: false,
+      autoPushOnSave: true,
+      autoPushMinIntervalSeconds: 30,
+    });
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [{ name: "first.md", path: "first.md" }],
+    });
+    readFileMock.mockResolvedValue("first content");
+    writeFileMock.mockResolvedValue();
+    syncPushMock.mockResolvedValue({
+      status: "success",
+      message: "已推送 1 项更新",
+      changedPaths: ["first.md"],
+      changedDirectories: [],
+      conflicts: [],
+      skippedDeletionPaths: [],
+      syncedAt: 100,
+    });
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() => expect(screen.getByTestId("current-file").textContent).toBe("first.md"));
+
+    await user.click(screen.getByRole("button", { name: "change-content" }));
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+    });
+
+    await waitFor(() =>
+      expect(writeFileMock).toHaveBeenCalledWith("first.md", "Draft content"),
+    );
+    await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(1));
   });
 
   it("监听到当前文件外部变更时会自动重载编辑区", async () => {

@@ -7,7 +7,10 @@ use std::{
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
-use crate::state::ProjectState;
+use crate::{
+    state::ProjectState,
+    sync::{self, SyncResponse, SyncSettings},
+};
 
 type AppResult<T> = Result<T, String>;
 
@@ -27,13 +30,6 @@ pub struct FileEntry {
 pub struct ProjectSnapshot {
     pub project_path: String,
     pub files: Vec<FileEntry>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncResponse {
-    pub status: String,
-    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -127,19 +123,34 @@ pub fn delete_file(path: String, state: State<'_, ProjectState>) -> AppResult<()
 }
 
 #[tauri::command]
-pub fn sync_push() -> SyncResponse {
-    SyncResponse {
-        status: "unsupported".to_string(),
-        message: "同步推送尚未实现，当前版本仅保留扩展接口".to_string(),
-    }
+pub fn get_sync_settings(app: AppHandle) -> AppResult<SyncSettings> {
+    sync::load_sync_settings(&app)
 }
 
 #[tauri::command]
-pub fn sync_pull() -> SyncResponse {
-    SyncResponse {
-        status: "unsupported".to_string(),
-        message: "同步拉取尚未实现，当前版本仅保留扩展接口".to_string(),
-    }
+pub fn save_sync_settings(settings: SyncSettings, app: AppHandle) -> AppResult<SyncSettings> {
+    sync::save_sync_settings(&app, settings)
+}
+
+#[tauri::command]
+pub fn test_sync_connection(settings: SyncSettings) -> AppResult<SyncResponse> {
+    sync::test_sync_connection(settings)
+}
+
+#[tauri::command]
+pub fn sync_push(app: AppHandle, state: State<'_, ProjectState>) -> AppResult<SyncResponse> {
+    let root = state.get_root()?;
+    let response = sync::execute_sync_push(&app, &root)?;
+    state.suppress_paths(response.changed_paths.clone());
+    Ok(response)
+}
+
+#[tauri::command]
+pub fn sync_pull(app: AppHandle, state: State<'_, ProjectState>) -> AppResult<SyncResponse> {
+    let root = state.get_root()?;
+    let response = sync::execute_sync_pull(&app, &root)?;
+    state.suppress_paths(response.changed_paths.clone());
+    Ok(response)
 }
 
 fn canonicalize_directory(directory: &str) -> AppResult<PathBuf> {
