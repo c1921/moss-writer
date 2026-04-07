@@ -8,6 +8,7 @@ import {
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { EditorCurrentFileName } from "@/features/editor/EditorCurrentFileName";
 import { EditorPane } from "@/features/editor/EditorPane";
 import { EditorSaveStatusBadge } from "@/features/editor/EditorSaveStatusBadge";
 import { FileSidebar } from "@/features/fileManager/FileSidebar";
@@ -21,8 +22,11 @@ function AppShell() {
       <FileSidebar />
       <SidebarInset>
         <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
-          <SidebarTrigger />
-          <EditorSaveStatusBadge className="ml-auto" />
+          <SidebarTrigger className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <EditorCurrentFileName />
+          </div>
+          <EditorSaveStatusBadge className="shrink-0" />
         </header>
         {appError ? (
           <div className="p-4 pb-0">
