@@ -5,13 +5,14 @@ use std::{
 };
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::state::ProjectState;
 
 type AppResult<T> = Result<T, String>;
 
 const INVALID_PATH_NAME_CHARS: [char; 9] = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+pub const PROJECT_FILES_CHANGED_EVENT: &str = "project-files-changed";
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -35,12 +36,32 @@ pub struct SyncResponse {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectFilesChangedKind {
+    Create,
+    Modify,
+    Remove,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFilesChangedEvent {
+    pub project_path: String,
+    pub kind: ProjectFilesChangedKind,
+    pub paths: Vec<String>,
+}
+
 #[tauri::command]
-pub fn open_project(directory: String, state: State<'_, ProjectState>) -> AppResult<ProjectSnapshot> {
+pub fn open_project(
+    directory: String,
+    app: AppHandle,
+    state: State<'_, ProjectState>,
+) -> AppResult<ProjectSnapshot> {
     let root = canonicalize_directory(&directory)?;
     let files = list_project_files(&root)?;
 
-    state.set_root(root.clone())?;
+    state.set_root(root.clone(), app)?;
 
     Ok(ProjectSnapshot {
         project_path: root.to_string_lossy().to_string(),
@@ -57,7 +78,10 @@ pub fn read_file(path: String, state: State<'_, ProjectState>) -> AppResult<Stri
 #[tauri::command]
 pub fn write_file(path: String, content: String, state: State<'_, ProjectState>) -> AppResult<()> {
     let root = state.get_root()?;
-    write_project_file(&root, &path, &content)
+    let normalized = normalize_project_file_path(&path, false)?;
+    write_project_file(&root, &normalized, &content)?;
+    state.suppress_paths([normalized]);
+    Ok(())
 }
 
 #[tauri::command]
@@ -69,7 +93,9 @@ pub fn list_files(directory: String) -> AppResult<Vec<FileEntry>> {
 #[tauri::command]
 pub fn create_file(path: String, state: State<'_, ProjectState>) -> AppResult<FileEntry> {
     let root = state.get_root()?;
-    create_project_file(&root, &path)
+    let file = create_project_file(&root, &path)?;
+    state.suppress_paths([file.path.clone()]);
+    Ok(file)
 }
 
 #[tauri::command]
@@ -85,13 +111,19 @@ pub fn rename_file(
     state: State<'_, ProjectState>,
 ) -> AppResult<FileEntry> {
     let root = state.get_root()?;
-    rename_project_file(&root, &path, &new_name)
+    let normalized_previous_path = normalize_project_file_path(&path, false)?;
+    let file = rename_project_file(&root, &normalized_previous_path, &new_name)?;
+    state.suppress_paths([normalized_previous_path, file.path.clone()]);
+    Ok(file)
 }
 
 #[tauri::command]
 pub fn delete_file(path: String, state: State<'_, ProjectState>) -> AppResult<()> {
     let root = state.get_root()?;
-    delete_project_file(&root, &path)
+    let normalized = normalize_project_file_path(&path, false)?;
+    delete_project_file(&root, &normalized)?;
+    state.suppress_paths([normalized]);
+    Ok(())
 }
 
 #[tauri::command]
@@ -359,7 +391,7 @@ fn file_entry_from_path(root: &Path, path: &Path) -> AppResult<FileEntry> {
         .ok()
         .and_then(|metadata| metadata.modified().ok())
         .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_secs());
+        .map(|duration| duration.as_millis() as u64);
 
     Ok(FileEntry {
         name,
@@ -514,12 +546,13 @@ mod tests {
     }
 
     #[test]
-    fn create_project_file_requires_existing_parent_dir() {
+    fn create_project_file_creates_missing_parent_dirs() {
         let project = TestProject::new();
 
-        let error = create_project_file(project.path(), "drafts/chapter-1").unwrap_err();
+        let created = create_project_file(project.path(), "drafts/chapter-1").unwrap();
 
-        assert!(error.contains("目标目录不存在"));
+        assert_eq!(created.path, "drafts/chapter-1.md");
+        assert!(project.path().join("drafts/chapter-1.md").exists());
     }
 
     #[test]

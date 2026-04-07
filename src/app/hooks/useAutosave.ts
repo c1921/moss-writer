@@ -16,9 +16,11 @@ export function useAutosave({ state, stateRef, dispatch, toMessage }: UseAutosav
   const savePromiseRef = useRef<Promise<void> | null>(null);
   const saveCurrentFileImplRef = useRef<() => Promise<void>>(async () => {});
   const flushPendingSaveImplRef = useRef<() => Promise<boolean>>(async () => true);
+  const prepareForExternalReloadImplRef = useRef<() => Promise<void>>(async () => {});
   const apiRef = useRef<{
     saveCurrentFile: () => Promise<void>;
     flushPendingSave: () => Promise<boolean>;
+    prepareForExternalReload: () => Promise<void>;
   } | null>(null);
 
   function clearSaveTimer() {
@@ -84,10 +86,19 @@ export function useAutosave({ state, stateRef, dispatch, toMessage }: UseAutosav
     return !stateRef.current.isDirty;
   };
 
+  prepareForExternalReloadImplRef.current = async () => {
+    clearSaveTimer();
+
+    if (savePromiseRef.current) {
+      await savePromiseRef.current;
+    }
+  };
+
   if (!apiRef.current) {
     apiRef.current = {
       saveCurrentFile: () => saveCurrentFileImplRef.current(),
       flushPendingSave: () => flushPendingSaveImplRef.current(),
+      prepareForExternalReload: () => prepareForExternalReloadImplRef.current(),
     };
   }
 

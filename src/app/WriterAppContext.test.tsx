@@ -8,6 +8,7 @@ vi.mock("@/shared/tauri/commands", () => ({
   writeFile: vi.fn(),
   listFiles: vi.fn(),
   createFile: vi.fn(),
+  createDirectory: vi.fn(),
   renameFile: vi.fn(),
   deleteFile: vi.fn(),
   syncPush: vi.fn(),
@@ -18,6 +19,10 @@ vi.mock("@/shared/tauri/dialog", () => ({
   pickProjectDirectory: vi.fn(),
 }));
 
+vi.mock("@/shared/tauri/events", () => ({
+  listenProjectFilesChanged: vi.fn(),
+}));
+
 import {
   WriterAppProvider,
   useWriterAppActions,
@@ -26,6 +31,7 @@ import {
   useWriterProjectState,
 } from "@/app/WriterAppContext";
 import * as commands from "@/shared/tauri/commands";
+import * as events from "@/shared/tauri/events";
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -99,9 +105,20 @@ describe("WriterAppProvider", () => {
   const createFileMock = vi.mocked(commands.createFile);
   const renameFileMock = vi.mocked(commands.renameFile);
   const deleteFileMock = vi.mocked(commands.deleteFile);
+  const listenProjectFilesChangedMock = vi.mocked(events.listenProjectFilesChanged);
+  const unlistenMock = vi.fn();
+  let projectFilesChangedHandler:
+    | ((payload: events.ProjectFilesChangedEvent) => void)
+    | null = null;
 
   beforeEach(() => {
     localStorage.clear();
+    projectFilesChangedHandler = null;
+    unlistenMock.mockReset();
+    listenProjectFilesChangedMock.mockImplementation(async (handler) => {
+      projectFilesChangedHandler = handler;
+      return unlistenMock;
+    });
   });
 
   it("忽略过期的文件读取结果", async () => {
@@ -274,5 +291,137 @@ describe("WriterAppProvider", () => {
     await waitFor(() => expect(openProjectMock).toHaveBeenCalledWith("/project"));
     await waitFor(() => expect(screen.getByTestId("current-file").textContent).toBe("first.md"));
     expect(screen.getByTestId("content").textContent).toBe("restored content");
+  });
+
+  it("监听到当前文件外部变更时会自动重载编辑区", async () => {
+    const user = userEvent.setup();
+    let firstRead = true;
+
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [{ name: "first.md", path: "first.md" }],
+    });
+    readFileMock.mockImplementation(async (path) => {
+      if (path !== "first.md") {
+        throw new Error(`unexpected path: ${path}`);
+      }
+
+      if (firstRead) {
+        firstRead = false;
+        return "first content";
+      }
+
+      return "external content";
+    });
+    listFilesMock.mockResolvedValue([{ name: "first.md", path: "first.md" }]);
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() => expect(screen.getByTestId("content").textContent).toBe("first content"));
+
+    act(() => {
+      projectFilesChangedHandler?.({
+        projectPath: "/project",
+        kind: "modify",
+        paths: ["first.md"],
+      });
+    });
+
+    await waitFor(() => expect(listFilesMock).toHaveBeenCalledWith("/project"));
+    await waitFor(() =>
+      expect(screen.getByTestId("content").textContent).toBe("external content"),
+    );
+  });
+
+  it("监听到当前文件被外部删除时会回退到首个可用文件", async () => {
+    const user = userEvent.setup();
+
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [
+        { name: "first.md", path: "first.md" },
+        { name: "second.md", path: "second.md" },
+      ],
+    });
+    readFileMock.mockImplementation(async (path) => {
+      if (path === "first.md") {
+        return "first content";
+      }
+
+      if (path === "second.md") {
+        return "second content";
+      }
+
+      throw new Error(`unexpected path: ${path}`);
+    });
+    listFilesMock.mockResolvedValue([{ name: "second.md", path: "second.md" }]);
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("current-file").textContent).toBe("first.md"),
+    );
+
+    act(() => {
+      projectFilesChangedHandler?.({
+        projectPath: "/project",
+        kind: "remove",
+        paths: ["first.md"],
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("current-file").textContent).toBe("second.md"),
+    );
+    expect(screen.getByTestId("files").textContent).toBe("second.md");
+    expect(screen.getByTestId("content").textContent).toBe("second content");
+  });
+
+  it("当前文件有未保存内容时遇到外部改动会放弃本地定时保存并重载磁盘内容", async () => {
+    const user = userEvent.setup();
+    let firstRead = true;
+
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [{ name: "first.md", path: "first.md" }],
+    });
+    readFileMock.mockImplementation(async () => {
+      if (firstRead) {
+        firstRead = false;
+        return "first content";
+      }
+
+      return "external content";
+    });
+    listFilesMock.mockResolvedValue([{ name: "first.md", path: "first.md" }]);
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() => expect(screen.getByTestId("content").textContent).toBe("first content"));
+
+    await user.click(screen.getByRole("button", { name: "change-content" }));
+    expect(screen.getByTestId("dirty").textContent).toBe("true");
+
+    act(() => {
+      projectFilesChangedHandler?.({
+        projectPath: "/project",
+        kind: "modify",
+        paths: ["first.md"],
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("content").textContent).toBe("external content"),
+    );
+    expect(screen.getByTestId("dirty").textContent).toBe("false");
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+    });
+
+    expect(writeFileMock).not.toHaveBeenCalled();
   });
 });

@@ -22,6 +22,7 @@ import {
   openProject,
   renameFile as renameFileCommand,
 } from "../shared/tauri/commands";
+import { listenProjectFilesChanged } from "../shared/tauri/events";
 
 interface WriterProjectStateContextValue {
   projectPath: string | null;
@@ -42,7 +43,6 @@ interface WriterEditorStateContextValue {
 interface WriterAppActionsContextValue {
   openProjectPicker: () => Promise<void>;
   openProjectPath: (projectPath: string, preferredFilePath?: string | null) => Promise<boolean>;
-  refreshFiles: () => Promise<FileEntry[]>;
   selectFile: (path: string) => Promise<void>;
   createFile: (name: string) => Promise<void>;
   createDirectory: (path: string) => Promise<void>;
@@ -75,7 +75,6 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
   const actionsImplRef = useRef<WriterAppActionsContextValue>({
     openProjectPicker: async () => {},
     openProjectPath: async () => false,
-    refreshFiles: async () => [],
     selectFile: async () => {},
     createFile: async () => {},
     createDirectory: async () => {},
@@ -85,6 +84,12 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     clearError: () => {},
   });
   const actionsRef = useRef<WriterAppActionsContextValue | null>(null);
+  const syncProjectFilesImplRef = useRef<(changedPaths?: string[]) => Promise<FileEntry[]>>(
+    async () => [],
+  );
+  const fileChangeSyncTimerRef = useRef<number | null>(null);
+  const queuedChangedPathsRef = useRef<Set<string>>(new Set());
+  const queuedProjectPathRef = useRef<string | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -94,14 +99,68 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     dispatch,
     toMessage,
   });
-  const { flushPendingSave } = useAutosave({
+  const { flushPendingSave, prepareForExternalReload } = useAutosave({
     state,
     stateRef,
     dispatch,
     toMessage,
   });
 
+  function clearQueuedFileSync() {
+    if (fileChangeSyncTimerRef.current !== null) {
+      window.clearTimeout(fileChangeSyncTimerRef.current);
+      fileChangeSyncTimerRef.current = null;
+    }
+
+    queuedChangedPathsRef.current.clear();
+    queuedProjectPathRef.current = null;
+  }
+
+  syncProjectFilesImplRef.current = async (changedPaths = []) => {
+    const projectPath = stateRef.current.projectPath;
+    if (!projectPath) {
+      return [];
+    }
+
+    const previousCurrentFilePath = stateRef.current.currentFilePath;
+
+    try {
+      const files = await listFiles(projectPath);
+      const currentFileStillExists = previousCurrentFilePath
+        ? files.some((file) => file.path === previousCurrentFilePath)
+        : false;
+      const currentFileWasChanged =
+        previousCurrentFilePath !== null && changedPaths.includes(previousCurrentFilePath);
+
+      if (
+        previousCurrentFilePath &&
+        (currentFileWasChanged || !currentFileStillExists)
+      ) {
+        await prepareForExternalReload();
+      }
+
+      dispatch({ type: "project/filesUpdated", files });
+
+      if (previousCurrentFilePath && currentFileStillExists && currentFileWasChanged) {
+        await loadFile(previousCurrentFilePath);
+      } else if (
+        previousCurrentFilePath &&
+        !currentFileStillExists &&
+        files[0]
+      ) {
+        await loadFile(files[0].path);
+      }
+
+      return files;
+    } catch (error) {
+      dispatch({ type: "error/set", message: toMessage(error) });
+      return stateRef.current.files;
+    }
+  };
+
   actionsImplRef.current.openProjectPath = async (projectPath, preferredFilePath) => {
+    clearQueuedFileSync();
+
     const canContinue = await flushPendingSave();
     if (!canContinue) {
       return false;
@@ -140,33 +199,6 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     }
 
     await actionsImplRef.current.openProjectPath(selectedPath);
-  };
-
-  actionsImplRef.current.refreshFiles = async () => {
-    const projectPath = stateRef.current.projectPath;
-    if (!projectPath) {
-      return [];
-    }
-
-    const previousCurrentFilePath = stateRef.current.currentFilePath;
-
-    try {
-      const files = await listFiles(projectPath);
-      dispatch({ type: "project/filesUpdated", files });
-
-      if (
-        previousCurrentFilePath &&
-        !files.some((file) => file.path === previousCurrentFilePath) &&
-        files[0]
-      ) {
-        await loadFile(files[0].path);
-      }
-
-      return files;
-    } catch (error) {
-      dispatch({ type: "error/set", message: toMessage(error) });
-      return stateRef.current.files;
-    }
   };
 
   actionsImplRef.current.selectFile = async (path) => {
@@ -268,7 +300,6 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       openProjectPicker: () => actionsImplRef.current.openProjectPicker(),
       openProjectPath: (projectPath, preferredFilePath) =>
         actionsImplRef.current.openProjectPath(projectPath, preferredFilePath),
-      refreshFiles: () => actionsImplRef.current.refreshFiles(),
       selectFile: (path) => actionsImplRef.current.selectFile(path),
       createFile: (name) => actionsImplRef.current.createFile(name),
       createDirectory: (path) => actionsImplRef.current.createDirectory(path),
@@ -278,6 +309,67 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       clearError: () => actionsImplRef.current.clearError(),
     };
   }
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void listenProjectFilesChanged((payload) => {
+      const activeProjectPath = stateRef.current.projectPath;
+      if (!activeProjectPath || payload.projectPath !== activeProjectPath) {
+        return;
+      }
+
+      if (
+        queuedProjectPathRef.current !== null &&
+        queuedProjectPathRef.current !== payload.projectPath
+      ) {
+        clearQueuedFileSync();
+      }
+
+      queuedProjectPathRef.current = payload.projectPath;
+
+      for (const path of payload.paths) {
+        queuedChangedPathsRef.current.add(path);
+      }
+
+      if (fileChangeSyncTimerRef.current !== null) {
+        return;
+      }
+
+      const scheduledProjectPath = payload.projectPath;
+      fileChangeSyncTimerRef.current = window.setTimeout(() => {
+        fileChangeSyncTimerRef.current = null;
+
+        const changedPaths = [...queuedChangedPathsRef.current];
+        queuedChangedPathsRef.current.clear();
+        queuedProjectPathRef.current = null;
+
+        if (disposed || stateRef.current.projectPath !== scheduledProjectPath) {
+          return;
+        }
+
+        void syncProjectFilesImplRef.current(changedPaths);
+      }, 200);
+    })
+      .then((nextUnlisten) => {
+        if (disposed) {
+          nextUnlisten();
+          return;
+        }
+
+        unlisten = nextUnlisten;
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      clearQueuedFileSync();
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
 
   useProjectSession({
     projectPath: state.projectPath,

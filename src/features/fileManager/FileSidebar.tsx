@@ -9,7 +9,7 @@ import {
   FolderPlus,
   LoaderCircle,
   Plus,
-  RefreshCw,
+  Settings2,
 } from "lucide-react"
 
 import { useWriterAppActions, useWriterProjectState } from "@/app/WriterAppContext"
@@ -65,8 +65,7 @@ const CLOSED_DIALOG: DialogState = { open: false, mode: "file", initialPath: "" 
 
 export function FileSidebar() {
   const projectState = useWriterProjectState()
-  const { openProjectPicker, refreshFiles, selectFile, createFile, createDirectory } =
-    useWriterAppActions()
+  const { openProjectPicker, selectFile, createFile, createDirectory } = useWriterAppActions()
   const [dialog, setDialog] = useState<DialogState>(CLOSED_DIALOG)
   const [nameValue, setNameValue] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -317,14 +316,13 @@ export function FileSidebar() {
         <div className="mt-auto border-t p-2">
           <Button
             className="w-full justify-start"
-            disabled={!projectState.projectPath || actionsDisabled}
-            onClick={() => void refreshFiles()}
+            disabled
             size="sm"
             type="button"
             variant="ghost"
           >
-            <RefreshCw className={cn("size-4", busy && "animate-spin")} />
-            刷新
+            <Settings2 className="size-4" />
+            设置
           </Button>
         </div>
       </Sidebar>
