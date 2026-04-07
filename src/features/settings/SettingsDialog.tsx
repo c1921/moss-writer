@@ -30,7 +30,10 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { WebDavSettings } from "@/features/settings/types"
 import { getBaseName } from "@/shared/utils/fileNames"
 
@@ -94,6 +97,14 @@ function getConflictLabel(reason: string) {
   }
 }
 
+function PlaceholderPanel({ title }: { title: string }) {
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      {title}（即将推出）
+    </div>
+  )
+}
+
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const projectState = useWriterProjectState()
   const syncState = useWriterSyncState()
@@ -101,11 +112,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [form, setForm] = useState<WebDavSettings>(syncState.settings)
   const [isSaving, setIsSaving] = useState(false)
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState("general")
 
   useEffect(() => {
     if (open) {
       setForm(syncState.settings)
       setSaveFeedback(null)
+      setActiveTab("general")
     }
   }, [open, syncState.settings])
 
@@ -200,227 +213,293 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-[min(44rem,calc(100%-1.5rem))] sm:max-w-[44rem]">
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <DialogHeader>
+      <DialogContent className="flex h-[min(38rem,calc(100vh-3rem))] max-w-[min(52rem,calc(100%-1.5rem))] flex-col overflow-hidden p-0 sm:max-w-[52rem]">
+        <form className="flex min-h-0 flex-1 flex-col gap-0" onSubmit={handleSubmit}>
+          <DialogHeader className="shrink-0 px-6 pt-6 pb-4">
             <DialogTitle>设置</DialogTitle>
             <DialogDescription>
               配置 WebDAV 连接，并控制打开项目自动拉取、保存后按最小时间间隔自动推送。
             </DialogDescription>
           </DialogHeader>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>WebDAV 连接</CardTitle>
-              <CardDescription>账号密码会保存在本机应用配置中。</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
-                <div className="space-y-1">
-                  <Label htmlFor="webdav-enabled">启用 WebDAV 同步</Label>
-                  <p className="text-xs text-muted-foreground">
-                    关闭后保留配置，但不会自动拉取或自动推送。
-                  </p>
+          <Separator />
+
+          <Tabs
+            className="flex min-h-0 flex-1 flex-row gap-0"
+            onValueChange={setActiveTab}
+            orientation="vertical"
+            value={activeTab}
+          >
+            <TabsList
+              className="h-full w-40 shrink-0 flex-col justify-start gap-1 rounded-none border-none bg-transparent px-2 py-3"
+              variant="line"
+            >
+              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="general">
+                基本设置
+              </TabsTrigger>
+              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="editor">
+                编辑器
+              </TabsTrigger>
+              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="appearance">
+                外观
+              </TabsTrigger>
+              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="git">
+                Git
+              </TabsTrigger>
+              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="shortcuts">
+                快捷键
+              </TabsTrigger>
+              <Separator className="my-1" />
+              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="webdav">
+                WebDAV
+              </TabsTrigger>
+            </TabsList>
+
+            <Separator orientation="vertical" />
+
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <ScrollArea className="h-full">
+                <div className="px-6 py-4">
+                  <TabsContent value="general">
+                    <PlaceholderPanel title="基本设置" />
+                  </TabsContent>
+
+                  <TabsContent value="editor">
+                    <PlaceholderPanel title="编辑器" />
+                  </TabsContent>
+
+                  <TabsContent value="appearance">
+                    <PlaceholderPanel title="外观" />
+                  </TabsContent>
+
+                  <TabsContent value="git">
+                    <PlaceholderPanel title="Git" />
+                  </TabsContent>
+
+                  <TabsContent value="shortcuts">
+                    <PlaceholderPanel title="快捷键" />
+                  </TabsContent>
+
+                  <TabsContent className="space-y-4" value="webdav">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>WebDAV 连接</CardTitle>
+                        <CardDescription>账号密码会保存在本机应用配置中。</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                          <div className="space-y-1">
+                            <Label htmlFor="webdav-enabled">启用 WebDAV 同步</Label>
+                            <p className="text-xs text-muted-foreground">
+                              关闭后保留配置，但不会自动拉取或自动推送。
+                            </p>
+                          </div>
+                          <Switch
+                            checked={form.enabled}
+                            id="webdav-enabled"
+                            onCheckedChange={(checked) => updateField("enabled", checked)}
+                          />
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-2 sm:col-span-2">
+                            <Label htmlFor="webdav-root-url">WebDAV 根地址</Label>
+                            <Input
+                              id="webdav-root-url"
+                              onChange={(event) => updateField("rootUrl", event.currentTarget.value)}
+                              placeholder="https://dav.example.com/remote.php/dav/files/you"
+                              value={form.rootUrl}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="webdav-username">用户名</Label>
+                            <Input
+                              id="webdav-username"
+                              onChange={(event) => updateField("username", event.currentTarget.value)}
+                              placeholder="writer"
+                              value={form.username}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="webdav-password">密码</Label>
+                            <Input
+                              id="webdav-password"
+                              onChange={(event) => updateField("password", event.currentTarget.value)}
+                              placeholder="••••••••"
+                              type="password"
+                              value={form.password}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border bg-muted/30 px-3 py-2">
+                          <p className="text-sm font-medium">远端项目映射</p>
+                          <p className="mt-1 break-all text-xs text-muted-foreground">{remotePreview}</p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            disabled={!hasConnectionDraft || actionsDisabled}
+                            onClick={() => void handleTestConnection()}
+                            type="button"
+                            variant="outline"
+                          >
+                            <ShieldCheck className="size-4" />
+                            测试连接
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>自动同步</CardTitle>
+                        <CardDescription>
+                          打开项目自动拉取；保存成功后，如果达到最小时间间隔，则自动推送。
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                          <div className="space-y-1">
+                            <Label htmlFor="auto-pull-on-open">打开项目自动拉取</Label>
+                            <p className="text-xs text-muted-foreground">
+                              打开本地项目后先从远端拉取，再载入章节列表。
+                            </p>
+                          </div>
+                          <Switch
+                            checked={form.autoPullOnOpen}
+                            id="auto-pull-on-open"
+                            onCheckedChange={(checked) => updateField("autoPullOnOpen", checked)}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                          <div className="space-y-1">
+                            <Label htmlFor="auto-push-on-save">保存后自动推送</Label>
+                            <p className="text-xs text-muted-foreground">
+                              只有本地保存成功且达到最小间隔时才推送。
+                            </p>
+                          </div>
+                          <Switch
+                            checked={form.autoPushOnSave}
+                            id="auto-push-on-save"
+                            onCheckedChange={(checked) => updateField("autoPushOnSave", checked)}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="auto-push-interval">自动推送最小间隔（秒）</Label>
+                          <Input
+                            id="auto-push-interval"
+                            min={30}
+                            onChange={(event) =>
+                              updateField(
+                                "autoPushMinIntervalSeconds",
+                                Number(event.currentTarget.value || 0)
+                              )
+                            }
+                            type="number"
+                            value={String(
+                              Number.isFinite(form.autoPushMinIntervalSeconds)
+                                ? form.autoPushMinIntervalSeconds
+                                : 120
+                            )}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            最小值 30 秒，默认 120 秒。
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>手动同步</CardTitle>
+                        <CardDescription>
+                          当前项目
+                          {projectBound ? `：${getBaseName(projectState.projectPath!)}` : "：未打开"}
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            disabled={!projectBound || !hasSavedSyncConfig || actionsDisabled}
+                            onClick={() => void handleManualPull()}
+                            type="button"
+                            variant="outline"
+                          >
+                            <CloudDownload className="size-4" />
+                            立即拉取
+                          </Button>
+                          <Button
+                            disabled={!projectBound || !hasSavedSyncConfig || actionsDisabled}
+                            onClick={() => void handleManualPush()}
+                            type="button"
+                            variant="outline"
+                          >
+                            <CloudUpload className="size-4" />
+                            立即推送
+                          </Button>
+                          <Button
+                            disabled={syncState.isSettingsLoading || actionsDisabled}
+                            onClick={() => void syncActions.reloadSyncSettings()}
+                            type="button"
+                            variant="ghost"
+                          >
+                            <RefreshCcw className="size-4" />
+                            重新载入设置
+                          </Button>
+                        </div>
+
+                        {!projectBound ? (
+                          <p className="text-xs text-muted-foreground">
+                            先打开一个本地项目，才能执行拉取或推送。
+                          </p>
+                        ) : null}
+                      </CardContent>
+                    </Card>
+
+                    {saveFeedback ? (
+                      <Alert variant={saveFeedback === "设置已保存" ? "default" : "destructive"}>
+                        <AlertTitle>{saveFeedback === "设置已保存" ? "设置已更新" : "保存失败"}</AlertTitle>
+                        <AlertDescription>{saveFeedback}</AlertDescription>
+                      </Alert>
+                    ) : null}
+
+                    {syncState.lastResult ? (
+                      <Alert variant={syncState.lastResult.status === "error" ? "destructive" : "default"}>
+                        <AlertTitle>{syncState.lastResult.message}</AlertTitle>
+                        <AlertDescription>
+                          <div className="space-y-1">
+                            {syncState.lastResult.changedPaths.length > 0 ? (
+                              <p>已处理文件：{syncState.lastResult.changedPaths.length}</p>
+                            ) : null}
+                            {syncState.lastResult.changedDirectories.length > 0 ? (
+                              <p>已处理目录：{syncState.lastResult.changedDirectories.length}</p>
+                            ) : null}
+                            {syncState.lastResult.conflicts.length > 0 ? (
+                              <p>
+                                未自动处理差异：{syncState.lastResult.conflicts.length} 项，
+                                最近一项为"{getConflictLabel(syncState.lastResult.conflicts[0].reason)}"
+                                ，路径 {syncState.lastResult.conflicts[0].path}
+                              </p>
+                            ) : null}
+                            {syncState.lastResult.skippedDeletionPaths.length > 0 ? (
+                              <p>删除差异待处理：{syncState.lastResult.skippedDeletionPaths.length} 项</p>
+                            ) : null}
+                          </div>
+                        </AlertDescription>
+                      </Alert>
+                    ) : null}
+                  </TabsContent>
                 </div>
-                <Switch
-                  checked={form.enabled}
-                  id="webdav-enabled"
-                  onCheckedChange={(checked) => updateField("enabled", checked)}
-                />
-              </div>
+              </ScrollArea>
+            </div>
+          </Tabs>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="webdav-root-url">WebDAV 根地址</Label>
-                  <Input
-                    id="webdav-root-url"
-                    onChange={(event) => updateField("rootUrl", event.currentTarget.value)}
-                    placeholder="https://dav.example.com/remote.php/dav/files/you"
-                    value={form.rootUrl}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="webdav-username">用户名</Label>
-                  <Input
-                    id="webdav-username"
-                    onChange={(event) => updateField("username", event.currentTarget.value)}
-                    placeholder="writer"
-                    value={form.username}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="webdav-password">密码</Label>
-                  <Input
-                    id="webdav-password"
-                    onChange={(event) => updateField("password", event.currentTarget.value)}
-                    placeholder="••••••••"
-                    type="password"
-                    value={form.password}
-                  />
-                </div>
-              </div>
+          <Separator />
 
-              <div className="rounded-lg border bg-muted/30 px-3 py-2">
-                <p className="text-sm font-medium">远端项目映射</p>
-                <p className="mt-1 break-all text-xs text-muted-foreground">{remotePreview}</p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  disabled={!hasConnectionDraft || actionsDisabled}
-                  onClick={() => void handleTestConnection()}
-                  type="button"
-                  variant="outline"
-                >
-                  <ShieldCheck className="size-4" />
-                  测试连接
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>自动同步</CardTitle>
-              <CardDescription>
-                打开项目自动拉取；保存成功后，如果达到最小时间间隔，则自动推送。
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
-                <div className="space-y-1">
-                  <Label htmlFor="auto-pull-on-open">打开项目自动拉取</Label>
-                  <p className="text-xs text-muted-foreground">
-                    打开本地项目后先从远端拉取，再载入章节列表。
-                  </p>
-                </div>
-                <Switch
-                  checked={form.autoPullOnOpen}
-                  id="auto-pull-on-open"
-                  onCheckedChange={(checked) => updateField("autoPullOnOpen", checked)}
-                />
-              </div>
-
-              <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
-                <div className="space-y-1">
-                  <Label htmlFor="auto-push-on-save">保存后自动推送</Label>
-                  <p className="text-xs text-muted-foreground">
-                    只有本地保存成功且达到最小间隔时才推送。
-                  </p>
-                </div>
-                <Switch
-                  checked={form.autoPushOnSave}
-                  id="auto-push-on-save"
-                  onCheckedChange={(checked) => updateField("autoPushOnSave", checked)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="auto-push-interval">自动推送最小间隔（秒）</Label>
-                <Input
-                  id="auto-push-interval"
-                  min={30}
-                  onChange={(event) =>
-                    updateField(
-                      "autoPushMinIntervalSeconds",
-                      Number(event.currentTarget.value || 0)
-                    )
-                  }
-                  type="number"
-                  value={String(
-                    Number.isFinite(form.autoPushMinIntervalSeconds)
-                      ? form.autoPushMinIntervalSeconds
-                      : 120
-                  )}
-                />
-                <p className="text-xs text-muted-foreground">
-                  最小值 30 秒，默认 120 秒。
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>手动同步</CardTitle>
-              <CardDescription>
-                当前项目
-                {projectBound ? `：${getBaseName(projectState.projectPath!)}` : "：未打开"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  disabled={!projectBound || !hasSavedSyncConfig || actionsDisabled}
-                  onClick={() => void handleManualPull()}
-                  type="button"
-                  variant="outline"
-                >
-                  <CloudDownload className="size-4" />
-                  立即拉取
-                </Button>
-                <Button
-                  disabled={!projectBound || !hasSavedSyncConfig || actionsDisabled}
-                  onClick={() => void handleManualPush()}
-                  type="button"
-                  variant="outline"
-                >
-                  <CloudUpload className="size-4" />
-                  立即推送
-                </Button>
-                <Button
-                  disabled={syncState.isSettingsLoading || actionsDisabled}
-                  onClick={() => void syncActions.reloadSyncSettings()}
-                  type="button"
-                  variant="ghost"
-                >
-                  <RefreshCcw className="size-4" />
-                  重新载入设置
-                </Button>
-              </div>
-
-              {!projectBound ? (
-                <p className="text-xs text-muted-foreground">
-                  先打开一个本地项目，才能执行拉取或推送。
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          {saveFeedback ? (
-            <Alert variant={saveFeedback === "设置已保存" ? "default" : "destructive"}>
-              <AlertTitle>{saveFeedback === "设置已保存" ? "设置已更新" : "保存失败"}</AlertTitle>
-              <AlertDescription>{saveFeedback}</AlertDescription>
-            </Alert>
-          ) : null}
-
-          {syncState.lastResult ? (
-            <Alert variant={syncState.lastResult.status === "error" ? "destructive" : "default"}>
-              <AlertTitle>{syncState.lastResult.message}</AlertTitle>
-              <AlertDescription>
-                <div className="space-y-1">
-                  {syncState.lastResult.changedPaths.length > 0 ? (
-                    <p>已处理文件：{syncState.lastResult.changedPaths.length}</p>
-                  ) : null}
-                  {syncState.lastResult.changedDirectories.length > 0 ? (
-                    <p>已处理目录：{syncState.lastResult.changedDirectories.length}</p>
-                  ) : null}
-                  {syncState.lastResult.conflicts.length > 0 ? (
-                    <p>
-                      未自动处理差异：{syncState.lastResult.conflicts.length} 项，
-                      最近一项为“{getConflictLabel(syncState.lastResult.conflicts[0].reason)}”
-                      ，路径 {syncState.lastResult.conflicts[0].path}
-                    </p>
-                  ) : null}
-                  {syncState.lastResult.skippedDeletionPaths.length > 0 ? (
-                    <p>删除差异待处理：{syncState.lastResult.skippedDeletionPaths.length} 项</p>
-                  ) : null}
-                </div>
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
-          <DialogFooter>
+          <DialogFooter className="mx-0 mb-0 shrink-0 px-6 py-4">
             <Button
               disabled={actionsDisabled}
               onClick={() => onOpenChange(false)}
