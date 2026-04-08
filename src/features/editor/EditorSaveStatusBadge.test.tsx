@@ -42,4 +42,18 @@ describe("EditorSaveStatusBadge", () => {
 
     expect(screen.getByTestId("editor-save-status").textContent).toBe("已保存");
   });
+
+  it("小窗模式需要状态位时，未打开章节也显示不可用状态", () => {
+    useWriterEditorStateMock.mockReturnValue({
+      currentFilePath: null,
+      editorContent: "",
+      saveStatus: "idle",
+      isDirty: false,
+      isFileLoading: false,
+    });
+
+    render(<EditorSaveStatusBadge showUnavailable />);
+
+    expect(screen.getByTestId("editor-save-status").textContent).toBe("未打开");
+  });
 });

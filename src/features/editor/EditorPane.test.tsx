@@ -49,4 +49,28 @@ describe("EditorPane", () => {
     fireEvent.change(textarea, { target: { value: "新的内容" } });
     expect(updateEditorContentMock).toHaveBeenCalledWith("新的内容");
   });
+
+  it("小窗模式下未打开项目时显示紧凑占位输入区", () => {
+    useWriterProjectStateMock.mockReturnValue({
+      projectPath: null,
+      files: [],
+      currentFilePath: null,
+      isProjectLoading: false,
+      isFileLoading: false,
+    });
+    useWriterEditorStateMock.mockReturnValue({
+      currentFilePath: null,
+      editorContent: "",
+      saveStatus: "idle",
+      isDirty: false,
+      isFileLoading: false,
+    });
+
+    render(<EditorPane variant="mini" />);
+
+    const textarea = screen.getByLabelText("小说正文编辑区") as HTMLTextAreaElement;
+    expect(textarea.placeholder).toBe("先在正常模式打开一个项目");
+    expect(textarea.disabled).toBe(true);
+    expect(screen.queryByText("专注写作")).toBeNull();
+  });
 });

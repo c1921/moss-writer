@@ -131,8 +131,13 @@
   }
 
   body {
-    @apply bg-background font-sans text-foreground antialiased;
+    @apply font-sans text-foreground antialiased;
     min-height: 100svh;
+    background: transparent;
+  }
+
+  body[data-window-mode="standard"] {
+    background: var(--color-background);
   }
 
   button:not(:disabled),

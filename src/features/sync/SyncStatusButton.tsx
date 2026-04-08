@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils"
 
 interface SyncStatusButtonProps {
   onClick: () => void
+  className?: string
+  compact?: boolean
 }
 
 function getSyncLabel({
@@ -50,7 +52,11 @@ function getSyncLabel({
   return lastMessage ?? "WebDAV 已启用"
 }
 
-export function SyncStatusButton({ onClick }: SyncStatusButtonProps) {
+export function SyncStatusButton({
+  onClick,
+  className,
+  compact = false,
+}: SyncStatusButtonProps) {
   const syncState = useWriterSyncState()
   const lastStatus = syncState.lastResult?.status ?? null
   const label = getSyncLabel({
@@ -74,17 +80,18 @@ export function SyncStatusButton({ onClick }: SyncStatusButtonProps) {
   return (
     <Button
       className={cn(
-        "max-w-52 justify-start gap-2 px-2",
+        compact ? "max-w-40 justify-start gap-1.5 px-2" : "max-w-52 justify-start gap-2 px-2",
         lastStatus === "warning" && "text-amber-700 dark:text-amber-300",
-        lastStatus === "error" && "text-destructive"
+        lastStatus === "error" && "text-destructive",
+        className,
       )}
       onClick={onClick}
-      size="sm"
+      size={compact ? "xs" : "sm"}
       type="button"
       variant="ghost"
     >
       <Icon className={cn("size-4 shrink-0", syncState.isSyncing && "animate-spin")} />
-      <span className="truncate text-xs">{label}</span>
+      <span className={cn("truncate text-xs", compact && "text-[11px]")}>{label}</span>
     </Button>
   )
 }

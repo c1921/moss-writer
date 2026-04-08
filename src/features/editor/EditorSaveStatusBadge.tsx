@@ -48,13 +48,35 @@ function getSaveBadgeClass(saveStatus: string, isDirty: boolean, isFileLoading: 
 
 interface EditorSaveStatusBadgeProps {
   className?: string;
+  compact?: boolean;
+  showUnavailable?: boolean;
 }
 
-export function EditorSaveStatusBadge({ className }: EditorSaveStatusBadgeProps) {
+export function EditorSaveStatusBadge({
+  className,
+  compact = false,
+  showUnavailable = false,
+}: EditorSaveStatusBadgeProps) {
   const editorState = useWriterEditorState();
 
   if (!editorState.currentFilePath) {
-    return null;
+    if (!showUnavailable) {
+      return null;
+    }
+
+    return (
+      <Badge
+        className={cn(
+          "border border-border/70 text-muted-foreground",
+          compact && "h-6 rounded-full px-2.5 py-0 text-[11px]",
+          className,
+        )}
+        data-testid="editor-save-status"
+        variant="outline"
+      >
+        未打开
+      </Badge>
+    );
   }
 
   const saveLabel = renderSaveStatus(
@@ -70,7 +92,12 @@ export function EditorSaveStatusBadge({ className }: EditorSaveStatusBadgeProps)
 
   return (
     <Badge
-      className={cn("border", saveBadgeClassName, className)}
+      className={cn(
+        "border",
+        saveBadgeClassName,
+        compact && "h-6 rounded-full px-2.5 py-0 text-[11px]",
+        className,
+      )}
       data-testid="editor-save-status"
       variant="outline"
     >
