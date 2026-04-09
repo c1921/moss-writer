@@ -333,7 +333,7 @@ function AboutPanel({
       <CardHeader>
         <CardTitle>关于 Moss Writer</CardTitle>
         <CardDescription>
-          当前应用版本来自本次打包写入的版本元数据。
+          一个简单的文本编辑器。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
