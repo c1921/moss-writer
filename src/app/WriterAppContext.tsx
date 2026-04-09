@@ -146,7 +146,9 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
   const loadSyncSettingsPromiseRef = useRef<Promise<WebDavSettings> | null>(null);
   const syncRequestPromiseRef = useRef<Promise<SyncResponse | null> | null>(null);
   const lastPushCompletedAtRef = useRef<number | null>(null);
-  const previousSaveStatusRef = useRef<SaveStatus>(state.saveStatus);
+  const lastAutoPushAttemptAtRef = useRef<number | null>(null);
+  const hasPendingAutoPushRef = useRef(false);
+  const autoPushTimerRef = useRef<number | null>(null);
   const fileChangeSyncTimerRef = useRef<number | null>(null);
   const queuedChangedPathsRef = useRef<Set<string>>(new Set());
   const queuedProjectPathRef = useRef<string | null>(null);
@@ -172,6 +174,9 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     stateRef,
     dispatch,
     toMessage,
+    onSaveSuccess: () => {
+      markPendingAutoPush();
+    },
   });
 
   function clearQueuedFileSync() {
@@ -182,6 +187,25 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
     queuedChangedPathsRef.current.clear();
     queuedProjectPathRef.current = null;
+  }
+
+  function clearAutoPushTimer() {
+    if (autoPushTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(autoPushTimerRef.current);
+    autoPushTimerRef.current = null;
+  }
+
+  function clearPendingAutoPush() {
+    hasPendingAutoPushRef.current = false;
+    lastAutoPushAttemptAtRef.current = null;
+    clearAutoPushTimer();
+  }
+
+  function resetAutoPushState() {
+    clearPendingAutoPush();
   }
 
   function setSyncStateWith(update: SyncState | ((current: SyncState) => SyncState)) {
@@ -201,6 +225,64 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       pendingItems: [],
       syncedAt: null,
     };
+  }
+
+  async function scheduleAutoPushIfNeeded() {
+    clearAutoPushTimer();
+
+    if (!hasPendingAutoPushRef.current) {
+      return;
+    }
+
+    const snapshot = stateRef.current;
+    const settings = syncSettingsRef.current;
+
+    if (!snapshot.projectPath || !settings.enabled || !settings.autoPushOnSave) {
+      return;
+    }
+
+    if (syncRequestPromiseRef.current) {
+      return;
+    }
+
+    const minIntervalMs = settings.autoPushMinIntervalSeconds * 1000;
+    const lastSyncAt = lastPushCompletedAtRef.current;
+    const lastAttemptAt = lastAutoPushAttemptAtRef.current;
+    const baselineAt =
+      lastSyncAt === null
+        ? lastAttemptAt
+        : lastAttemptAt === null
+          ? lastSyncAt
+          : Math.max(lastSyncAt, lastAttemptAt);
+
+    if (baselineAt !== null) {
+      const remainingMs = baselineAt + minIntervalMs - Date.now();
+      if (remainingMs > 0) {
+        autoPushTimerRef.current = window.setTimeout(() => {
+          autoPushTimerRef.current = null;
+          void scheduleAutoPushIfNeeded();
+        }, remainingMs);
+        return;
+      }
+    }
+
+    lastAutoPushAttemptAtRef.current = Date.now();
+    const response = await performSync("push", () => syncPushCommand(), {
+      skipFlush: true,
+      surfaceAppError: true,
+    });
+
+    if (!hasPendingAutoPushRef.current || (response && response.status !== "error")) {
+      clearPendingAutoPush();
+      return;
+    }
+
+    void scheduleAutoPushIfNeeded();
+  }
+
+  function markPendingAutoPush() {
+    hasPendingAutoPushRef.current = true;
+    void scheduleAutoPushIfNeeded();
   }
 
   async function loadSyncSettingsInternal(surfaceAppError = false) {
@@ -295,6 +377,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
         if (direction === "push" && response.status !== "error") {
           lastPushCompletedAtRef.current = response.syncedAt ?? Date.now();
+          clearPendingAutoPush();
         }
 
         if (
@@ -323,6 +406,9 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
         return errorResponse;
       } finally {
         syncRequestPromiseRef.current = null;
+        if (hasPendingAutoPushRef.current) {
+          void scheduleAutoPushIfNeeded();
+        }
       }
     })();
 
@@ -426,6 +512,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
   actionsImplRef.current.openProjectPath = async (projectPath, preferredFilePath) => {
     clearQueuedFileSync();
+    resetAutoPushState();
 
     const canContinue = await flushPendingSave();
     if (!canContinue) {
@@ -514,6 +601,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     try {
       const createdFile = await createFileCommand(name);
       dispatch({ type: "project/fileAdded", file: createdFile });
+      markPendingAutoPush();
       await loadFile(createdFile.path);
     } catch (error) {
       dispatch({ type: "error/set", message: toMessage(error) });
@@ -527,6 +615,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
     try {
       await createDirectoryCommand(path);
+      markPendingAutoPush();
     } catch (error) {
       dispatch({ type: "error/set", message: toMessage(error) });
     }
@@ -545,6 +634,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     try {
       const renamedFile = await renameFileCommand(path, newName);
       dispatch({ type: "project/fileRenamed", previousPath: path, file: renamedFile });
+      markPendingAutoPush();
     } catch (error) {
       dispatch({ type: "error/set", message: toMessage(error) });
     }
@@ -565,6 +655,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     try {
       await deleteFileCommand(path);
       dispatch({ type: "project/fileDeleted", path });
+      markPendingAutoPush();
 
       if (deletingCurrentFile && remainingFiles[0]) {
         await loadFile(remainingFiles[0].path);
@@ -664,45 +755,25 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
   }, []);
 
   useEffect(() => {
-    const previousSaveStatus = previousSaveStatusRef.current;
-    previousSaveStatusRef.current = state.saveStatus;
-
-    if (previousSaveStatus === "saved" || state.saveStatus !== "saved") {
+    if (!state.projectPath) {
+      clearPendingAutoPush();
       return;
     }
 
-    void (async () => {
-      try {
-        const settings = await loadSyncSettingsInternal();
-        const snapshot = stateRef.current;
+    if (!syncSettings.enabled || !syncSettings.autoPushOnSave) {
+      clearAutoPushTimer();
+      return;
+    }
 
-        if (
-          !snapshot.projectPath ||
-          snapshot.isDirty ||
-          !settings.enabled ||
-          !settings.autoPushOnSave
-        ) {
-          return;
-        }
-
-        const minIntervalMs = settings.autoPushMinIntervalSeconds * 1000;
-        const now = Date.now();
-        if (
-          lastPushCompletedAtRef.current !== null &&
-          now - lastPushCompletedAtRef.current < minIntervalMs
-        ) {
-          return;
-        }
-
-        await performSync("push", () => syncPushCommand(), {
-          skipFlush: true,
-          surfaceAppError: true,
-        });
-      } catch (error) {
-        dispatch({ type: "error/set", message: toMessage(error) });
-      }
-    })();
-  }, [state.saveStatus]);
+    if (hasPendingAutoPushRef.current) {
+      void scheduleAutoPushIfNeeded();
+    }
+  }, [
+    state.projectPath,
+    syncSettings.enabled,
+    syncSettings.autoPushOnSave,
+    syncSettings.autoPushMinIntervalSeconds,
+  ]);
 
   useEffect(() => {
     let disposed = false;
@@ -743,6 +814,10 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
           return;
         }
 
+        if (changedPaths.length > 0) {
+          markPendingAutoPush();
+        }
+
         void syncProjectFilesImplRef.current(changedPaths);
       }, 200);
     })
@@ -758,6 +833,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
     return () => {
       disposed = true;
+      clearPendingAutoPush();
       clearQueuedFileSync();
       if (unlisten) {
         unlisten();

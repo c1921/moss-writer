@@ -420,7 +420,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4">
             <DialogTitle>设置</DialogTitle>
             <DialogDescription>
-              配置 WebDAV 连接，并控制打开项目自动拉取、保存后按最小时间间隔自动推送。
+              配置 WebDAV 连接，并控制打开项目自动拉取，以及本地已落盘改动的自动推送。
             </DialogDescription>
           </DialogHeader>
 
@@ -557,7 +557,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       <CardHeader>
                         <CardTitle>自动同步</CardTitle>
                         <CardDescription>
-                          打开项目自动拉取；保存成功后，如果达到最小时间间隔，则自动推送。
+                          打开项目自动拉取；只要存在本地已落盘改动，到达最小时间间隔后就会自动推送。
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3">
@@ -577,9 +577,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
                         <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
                           <div className="space-y-1">
-                            <Label htmlFor="auto-push-on-save">保存后自动推送</Label>
+                            <Label htmlFor="auto-push-on-save">自动推送本地改动</Label>
                             <p className="text-xs text-muted-foreground">
-                              只有本地保存成功且达到最小间隔时才推送。
+                              已写入本地文件的改动会在达到最小间隔后自动推送，不包含尚未保存的编辑内容。
                             </p>
                           </div>
                           <Switch

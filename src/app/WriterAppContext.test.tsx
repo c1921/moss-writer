@@ -34,6 +34,7 @@ import {
   useWriterEditorState,
   useWriterProjectState,
 } from "@/app/WriterAppContext";
+import type { SyncResponse } from "@/features/sync/types";
 import * as commands from "@/shared/tauri/commands";
 import * as events from "@/shared/tauri/events";
 
@@ -77,6 +78,12 @@ function TestHarness() {
       <button onClick={() => actions.updateEditorContent("Draft content")} type="button">
         change-content
       </button>
+      <button onClick={() => actions.updateEditorContent("Draft content 2")} type="button">
+        change-content-2
+      </button>
+      <button onClick={() => actions.updateEditorContent("Draft content 3")} type="button">
+        change-content-3
+      </button>
       <button onClick={() => void actions.createFile("drafts/chapter-2")} type="button">
         create-file
       </button>
@@ -99,6 +106,48 @@ function renderHarness() {
       <TestHarness />
     </WriterAppProvider>,
   );
+}
+
+async function waitForMs(ms: number) {
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, ms));
+  });
+}
+
+function createSyncResponse(
+  status: "success" | "warning" | "error",
+  syncedAt: number | null,
+): SyncResponse {
+  return {
+    status,
+    message:
+      status === "error"
+        ? "同步失败"
+        : status === "warning"
+          ? "已推送 1 项更新，但仍有待处理差异"
+          : "已推送 1 项更新",
+    changedPaths: ["first.md"],
+    changedDirectories: [],
+    conflicts: [],
+    skippedDeletionPaths: [],
+    pendingItems:
+      status === "warning"
+        ? [
+            {
+              path: "first.md",
+              entryType: "file",
+              reason: "bothModified",
+              localExists: true,
+              remoteExists: true,
+              localModifiedAt: syncedAt,
+              remoteModifiedAt: syncedAt,
+              latestResolution: "undetermined",
+              latestResolutionReason: "timestampsEqual",
+            },
+          ]
+        : [],
+    syncedAt,
+  };
 }
 
 describe("WriterAppProvider", () => {
@@ -355,7 +404,7 @@ describe("WriterAppProvider", () => {
     expect(screen.getByTestId("content").textContent).toBe("remote content");
   });
 
-  it("本地自动保存成功后在满足间隔时自动推送", async () => {
+  it("已落盘改动会在间隔到点后自动推送，即使没有新的保存触发", async () => {
     const user = userEvent.setup();
 
     getSyncSettingsMock.mockResolvedValue({
@@ -365,7 +414,7 @@ describe("WriterAppProvider", () => {
       password: "secret",
       autoPullOnOpen: false,
       autoPushOnSave: true,
-      autoPushMinIntervalSeconds: 30,
+      autoPushMinIntervalSeconds: 2,
     });
     openProjectMock.mockResolvedValue({
       projectPath: "/project",
@@ -373,16 +422,7 @@ describe("WriterAppProvider", () => {
     });
     readFileMock.mockResolvedValue("first content");
     writeFileMock.mockResolvedValue();
-    syncPushMock.mockResolvedValue({
-      status: "success",
-      message: "已推送 1 项更新",
-      changedPaths: ["first.md"],
-      changedDirectories: [],
-      conflicts: [],
-      skippedDeletionPaths: [],
-      pendingItems: [],
-      syncedAt: 100,
-    });
+    syncPushMock.mockImplementation(async () => createSyncResponse("success", Date.now()));
 
     renderHarness();
 
@@ -391,14 +431,257 @@ describe("WriterAppProvider", () => {
 
     await user.click(screen.getByRole("button", { name: "change-content" }));
 
-    await act(async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 900));
-    });
+    await waitForMs(900);
 
     await waitFor(() =>
       expect(writeFileMock).toHaveBeenCalledWith("first.md", "Draft content"),
     );
     await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: "change-content-2" }));
+
+    await waitForMs(900);
+
+    await waitFor(() =>
+      expect(writeFileMock).toHaveBeenCalledWith("first.md", "Draft content 2"),
+    );
+    expect(syncPushMock).toHaveBeenCalledTimes(1);
+
+    await waitForMs(1_150);
+
+    await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(2));
+    expect(writeFileMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("自动推送不会顺带保存尚未落盘的编辑内容", async () => {
+    const user = userEvent.setup();
+
+    getSyncSettingsMock.mockResolvedValue({
+      enabled: true,
+      rootUrl: "https://dav.example.com/root",
+      username: "writer",
+      password: "secret",
+      autoPullOnOpen: false,
+      autoPushOnSave: true,
+      autoPushMinIntervalSeconds: 2,
+    });
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [{ name: "first.md", path: "first.md" }],
+    });
+    readFileMock.mockResolvedValue("first content");
+    writeFileMock.mockResolvedValue();
+    syncPushMock.mockImplementation(async () => createSyncResponse("success", Date.now()));
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() => expect(screen.getByTestId("current-file").textContent).toBe("first.md"));
+
+    await user.click(screen.getByRole("button", { name: "change-content" }));
+
+    await waitForMs(900);
+
+    await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: "change-content-2" }));
+
+    await waitForMs(900);
+
+    await waitFor(() =>
+      expect(writeFileMock).toHaveBeenCalledWith("first.md", "Draft content 2"),
+    );
+    expect(syncPushMock).toHaveBeenCalledTimes(1);
+
+    await waitForMs(700);
+
+    await user.click(screen.getByRole("button", { name: "change-content-3" }));
+    expect(screen.getByTestId("dirty").textContent).toBe("true");
+
+    await waitForMs(500);
+
+    await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(2));
+    expect(writeFileMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("dirty").textContent).toBe("true");
+  });
+
+  it("创建、重命名和删除文件会在满足间隔时自动推送", async () => {
+    const user = userEvent.setup();
+
+    getSyncSettingsMock.mockResolvedValue({
+      enabled: true,
+      rootUrl: "https://dav.example.com/root",
+      username: "writer",
+      password: "secret",
+      autoPullOnOpen: false,
+      autoPushOnSave: true,
+      autoPushMinIntervalSeconds: 1,
+    });
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [{ name: "chapter-1.md", path: "drafts/chapter-1.md" }],
+    });
+    readFileMock.mockImplementation((path) => {
+      if (path === "drafts/chapter-1.md") {
+        return Promise.resolve("chapter 1");
+      }
+
+      if (path === "drafts/chapter-2.md") {
+        return Promise.resolve("");
+      }
+
+      if (path === "published/final.md") {
+        return Promise.resolve("");
+      }
+
+      throw new Error(`unexpected path: ${path}`);
+    });
+    createFileMock.mockResolvedValue({
+      name: "chapter-2.md",
+      path: "drafts/chapter-2.md",
+    });
+    renameFileMock.mockResolvedValue({
+      name: "final.md",
+      path: "published/final.md",
+    });
+    deleteFileMock.mockResolvedValue();
+    syncPushMock.mockImplementation(async () => createSyncResponse("success", Date.now()));
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("current-file").textContent).toBe("drafts/chapter-1.md"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "create-file" }));
+    await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole("button", { name: "rename-file" }));
+    expect(syncPushMock).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "delete-file" }));
+    expect(syncPushMock).toHaveBeenCalledTimes(1);
+    await waitForMs(1_100);
+
+    await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("外部已落盘文件变更会自动进入推送队列", async () => {
+    const user = userEvent.setup();
+
+    getSyncSettingsMock.mockResolvedValue({
+      enabled: true,
+      rootUrl: "https://dav.example.com/root",
+      username: "writer",
+      password: "secret",
+      autoPullOnOpen: false,
+      autoPushOnSave: true,
+      autoPushMinIntervalSeconds: 1,
+    });
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [{ name: "first.md", path: "first.md" }],
+    });
+    readFileMock.mockImplementation(async (path) => {
+      if (path !== "first.md") {
+        throw new Error(`unexpected path: ${path}`);
+      }
+
+      return "external content";
+    });
+    listFilesMock.mockResolvedValue([{ name: "first.md", path: "first.md" }]);
+    syncPushMock.mockImplementation(async () => createSyncResponse("success", Date.now()));
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() => expect(screen.getByTestId("current-file").textContent).toBe("first.md"));
+
+    act(() => {
+      projectFilesChangedHandler?.({
+        projectPath: "/project",
+        kind: "modify",
+        paths: ["first.md"],
+      });
+    });
+
+    await waitForMs(250);
+
+    await waitFor(() => expect(listFilesMock).toHaveBeenCalledWith("/project"));
+    await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("自动推送失败后会按最小间隔继续重试", async () => {
+    const user = userEvent.setup();
+
+    getSyncSettingsMock.mockResolvedValue({
+      enabled: true,
+      rootUrl: "https://dav.example.com/root",
+      username: "writer",
+      password: "secret",
+      autoPullOnOpen: false,
+      autoPushOnSave: true,
+      autoPushMinIntervalSeconds: 1,
+    });
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [{ name: "first.md", path: "first.md" }],
+    });
+    readFileMock.mockResolvedValue("first content");
+    writeFileMock.mockResolvedValue();
+    syncPushMock.mockImplementation(async () => createSyncResponse("error", null));
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() => expect(screen.getByTestId("current-file").textContent).toBe("first.md"));
+
+    await user.click(screen.getByRole("button", { name: "change-content" }));
+
+    await waitForMs(900);
+
+    await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(1));
+
+    await waitForMs(1_100);
+
+    await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("自动推送告警结果不会在无新改动时重复重试", async () => {
+    const user = userEvent.setup();
+
+    getSyncSettingsMock.mockResolvedValue({
+      enabled: true,
+      rootUrl: "https://dav.example.com/root",
+      username: "writer",
+      password: "secret",
+      autoPullOnOpen: false,
+      autoPushOnSave: true,
+      autoPushMinIntervalSeconds: 1,
+    });
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [{ name: "first.md", path: "first.md" }],
+    });
+    readFileMock.mockResolvedValue("first content");
+    writeFileMock.mockResolvedValue();
+    syncPushMock.mockImplementation(async () => createSyncResponse("warning", Date.now()));
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() => expect(screen.getByTestId("current-file").textContent).toBe("first.md"));
+
+    await user.click(screen.getByRole("button", { name: "change-content" }));
+
+    await waitForMs(900);
+
+    await waitFor(() => expect(syncPushMock).toHaveBeenCalledTimes(1));
+
+    await waitForMs(1_100);
+
+    expect(syncPushMock).toHaveBeenCalledTimes(1);
   });
 
   it("监听到当前文件外部变更时会自动重载编辑区", async () => {

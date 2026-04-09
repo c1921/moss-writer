@@ -9,9 +9,16 @@ interface UseAutosaveOptions {
   stateRef: MutableRefObject<AppState>;
   dispatch: Dispatch<AppAction>;
   toMessage: (error: unknown) => string;
+  onSaveSuccess?: (path: string, content: string) => void;
 }
 
-export function useAutosave({ state, stateRef, dispatch, toMessage }: UseAutosaveOptions) {
+export function useAutosave({
+  state,
+  stateRef,
+  dispatch,
+  toMessage,
+  onSaveSuccess,
+}: UseAutosaveOptions) {
   const saveTimerRef = useRef<number | null>(null);
   const savePromiseRef = useRef<Promise<void> | null>(null);
   const saveCurrentFileImplRef = useRef<() => Promise<void>>(async () => {});
@@ -52,6 +59,7 @@ export function useAutosave({ state, stateRef, dispatch, toMessage }: UseAutosav
       try {
         await writeFile(path, content);
         dispatch({ type: "editor/saveSucceeded", path, content });
+        onSaveSuccess?.(path, content);
       } catch (error) {
         dispatch({ type: "editor/saveFailed", message: toMessage(error) });
       }
