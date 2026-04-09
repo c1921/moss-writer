@@ -277,15 +277,15 @@ pub(crate) fn sync_operation_message(
     match (direction, applied_count, pending_count) {
         (SyncDirection::Pull, 0, 0) => "没有需要拉取的更新".to_string(),
         (SyncDirection::Push, 0, 0) => "没有需要推送的更新".to_string(),
-        (SyncDirection::Pull, _, 0) => format!("已拉取 {applied_count} 项更新"),
-        (SyncDirection::Push, _, 0) => format!("已推送 {applied_count} 项更新"),
+        (SyncDirection::Pull, _, 0) => "拉取完成".to_string(),
+        (SyncDirection::Push, _, 0) => "推送完成".to_string(),
         (SyncDirection::Pull, 0, pending) => format!("拉取完成，但仍有 {pending} 项待处理差异"),
         (SyncDirection::Push, 0, pending) => format!("推送完成，但仍有 {pending} 项待处理差异"),
         (SyncDirection::Pull, _, pending) => {
-            format!("已拉取 {applied_count} 项更新，但仍有 {pending} 项待处理差异")
+            format!("拉取完成，但仍有 {pending} 项待处理差异")
         }
         (SyncDirection::Push, _, pending) => {
-            format!("已推送 {applied_count} 项更新，但仍有 {pending} 项待处理差异")
+            format!("推送完成，但仍有 {pending} 项待处理差异")
         }
     }
 }

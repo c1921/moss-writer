@@ -124,8 +124,8 @@ function createSyncResponse(
       status === "error"
         ? "同步失败"
         : status === "warning"
-          ? "已推送 1 项更新，但仍有待处理差异"
-          : "已推送 1 项更新",
+          ? "推送完成，但仍有待处理差异"
+          : "推送完成",
     changedPaths: ["first.md"],
     changedDirectories: [],
     conflicts: [],

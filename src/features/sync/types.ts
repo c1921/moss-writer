@@ -79,4 +79,5 @@ export interface SyncState {
   lastDirection: SyncDirection | null
   lastResult: SyncResponse | null
   lastSuccessfulSyncAt: number | null
+  nextAutoPushAt: number | null
 }

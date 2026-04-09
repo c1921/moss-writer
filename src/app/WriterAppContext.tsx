@@ -113,6 +113,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     lastDirection: null,
     lastResult: null,
     lastSuccessfulSyncAt: null,
+    nextAutoPushAt: null,
   });
   const stateRef = useRef<AppState>(state);
   const syncSettingsRef = useRef<WebDavSettings>(DEFAULT_WEB_DAV_SETTINGS);
@@ -202,6 +203,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     hasPendingAutoPushRef.current = false;
     lastAutoPushAttemptAtRef.current = null;
     clearAutoPushTimer();
+    setSyncStateWith((s) => ({ ...s, nextAutoPushAt: null }));
   }
 
   function resetAutoPushState() {
@@ -258,8 +260,10 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     if (baselineAt !== null) {
       const remainingMs = baselineAt + minIntervalMs - Date.now();
       if (remainingMs > 0) {
+        setSyncStateWith((s) => ({ ...s, nextAutoPushAt: Date.now() + remainingMs }));
         autoPushTimerRef.current = window.setTimeout(() => {
           autoPushTimerRef.current = null;
+          setSyncStateWith((s) => ({ ...s, nextAutoPushAt: null }));
           void scheduleAutoPushIfNeeded();
         }, remainingMs);
         return;

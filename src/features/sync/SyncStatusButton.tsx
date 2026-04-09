@@ -5,6 +5,7 @@ import {
   CloudUpload,
   LoaderCircle,
 } from "lucide-react"
+import { useEffect, useState } from "react"
 
 import { useWriterSyncState } from "@/app/WriterAppContext"
 import { Button } from "@/components/ui/button"
@@ -78,13 +79,34 @@ export function SyncStatusButton({
 }: SyncStatusButtonProps) {
   const syncState = useWriterSyncState()
   const lastStatus = syncState.lastResult?.status ?? null
-  const label = getSyncLabel({
+  const baseLabel = getSyncLabel({
     isSettingsLoading: syncState.isSettingsLoading,
     isSyncing: syncState.isSyncing,
     activeDirection: syncState.activeDirection,
     settingsEnabled: syncState.settings.enabled,
     lastMessage: syncState.lastResult?.message ?? null,
   })
+
+  const [countdown, setCountdown] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!syncState.nextAutoPushAt) {
+      setCountdown(null)
+      return
+    }
+    const update = () => {
+      const remaining = Math.ceil((syncState.nextAutoPushAt! - Date.now()) / 1000)
+      setCountdown(remaining > 0 ? remaining : null)
+    }
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
+  }, [syncState.nextAutoPushAt])
+
+  const label =
+    !syncState.isSyncing && countdown !== null && countdown > 0
+      ? `${countdown}s`
+      : baseLabel
 
   const Icon = syncState.isSyncing
     ? LoaderCircle
