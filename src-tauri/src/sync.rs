@@ -62,6 +62,73 @@ pub struct SyncConflict {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncPendingEntryType {
+    File,
+    Directory,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncPendingReason {
+    BothModified,
+    InitialContentMismatch,
+    LocalAhead,
+    RemoteAhead,
+    LocalOnly,
+    RemoteOnly,
+    LocalDeletedRemotePresent,
+    RemoteDeletedLocalPresent,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncLatestResolution {
+    Local,
+    Remote,
+    Undetermined,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncLatestResolutionReason {
+    LocalOnly,
+    RemoteOnly,
+    LocalAhead,
+    RemoteAhead,
+    LocalNewer,
+    RemoteNewer,
+    LocalDeletionOnly,
+    RemoteDeletionOnly,
+    MissingTimestamp,
+    TimestampsEqual,
+    DeletionConflict,
+    DirectoryDeletionConflict,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncPendingItem {
+    pub path: String,
+    pub entry_type: SyncPendingEntryType,
+    pub reason: SyncPendingReason,
+    pub local_exists: bool,
+    pub remote_exists: bool,
+    pub local_modified_at: Option<u64>,
+    pub remote_modified_at: Option<u64>,
+    pub latest_resolution: SyncLatestResolution,
+    pub latest_resolution_reason: SyncLatestResolutionReason,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SyncResolveStrategy {
+    Latest,
+    Local,
+    Remote,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncResponse {
@@ -71,6 +138,7 @@ pub struct SyncResponse {
     pub changed_directories: Vec<String>,
     pub conflicts: Vec<SyncConflict>,
     pub skipped_deletion_paths: Vec<String>,
+    pub pending_items: Vec<SyncPendingItem>,
     pub synced_at: Option<u64>,
 }
 
@@ -96,6 +164,7 @@ struct RemoteRevision {
 #[derive(Debug, Clone)]
 struct LocalFileEntry {
     content_hash: String,
+    modified_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -121,6 +190,41 @@ struct RemoteSnapshot {
 enum SyncDirection {
     Pull,
     Push,
+}
+
+#[derive(Debug, Clone, Default)]
+struct PendingState {
+    items: Vec<SyncPendingItem>,
+    conflicts: Vec<SyncConflict>,
+    skipped_deletion_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ResolvePlan {
+    upload_files: BTreeSet<String>,
+    download_files: BTreeSet<String>,
+    create_remote_directories: BTreeSet<String>,
+    create_local_directories: BTreeSet<String>,
+    delete_remote_files: BTreeSet<String>,
+    delete_local_files: BTreeSet<String>,
+    delete_remote_directories: BTreeSet<String>,
+    delete_local_directories: BTreeSet<String>,
+    resolved_file_paths: BTreeSet<String>,
+    removed_file_paths: BTreeSet<String>,
+    resolved_directory_paths: BTreeSet<String>,
+    removed_directory_paths: BTreeSet<String>,
+    applied_item_count: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ResolveExecution {
+    changed_paths: BTreeSet<String>,
+    changed_directories: BTreeSet<String>,
+    resolved_file_paths: BTreeSet<String>,
+    removed_file_paths: BTreeSet<String>,
+    resolved_directories: BTreeSet<String>,
+    removed_directories: BTreeSet<String>,
+    remote_mutated: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -237,6 +341,34 @@ impl WebDavClient {
         }
     }
 
+    fn delete_resource(&self, url: &Url, entry_type: SyncPendingEntryType) -> SyncResult<()> {
+        let response = self
+            .request(Method::DELETE, url.clone())
+            .send()
+            .map_err(|error| {
+                let target = match entry_type {
+                    SyncPendingEntryType::File => "删除远端文件",
+                    SyncPendingEntryType::Directory => "删除远端目录",
+                };
+                format!("{target}失败：{error}")
+            })?;
+
+        match response.status() {
+            StatusCode::OK
+            | StatusCode::ACCEPTED
+            | StatusCode::NO_CONTENT
+            | StatusCode::NOT_FOUND => Ok(()),
+            status if status.as_u16() == 207 => Ok(()),
+            status => {
+                let target = match entry_type {
+                    SyncPendingEntryType::File => "删除远端文件",
+                    SyncPendingEntryType::Directory => "删除远端目录",
+                };
+                Err(format!("{target}失败：HTTP {}", status.as_u16()))
+            }
+        }
+    }
+
     fn request(&self, method: Method, url: Url) -> reqwest::blocking::RequestBuilder {
         self.client
             .request(method, url)
@@ -269,6 +401,7 @@ pub fn test_sync_connection(settings: SyncSettings) -> SyncResult<SyncResponse> 
         changed_directories: Vec::new(),
         conflicts: Vec::new(),
         skipped_deletion_paths: Vec::new(),
+        pending_items: Vec::new(),
         synced_at: Some(current_timestamp_millis()),
     })
 }
@@ -285,6 +418,120 @@ pub fn execute_sync_push<R: Runtime>(
     project_root: &Path,
 ) -> SyncResult<SyncResponse> {
     execute_sync(app, project_root, SyncDirection::Push)
+}
+
+pub fn resolve_sync_pending<R: Runtime>(
+    app: &AppHandle<R>,
+    project_root: &Path,
+    strategy: SyncResolveStrategy,
+) -> SyncResult<SyncResponse> {
+    let config_dir = ensure_config_dir(app)?;
+    let settings = load_sync_settings_from_dir(&config_dir)?;
+    let settings = sanitize_sync_settings(settings, true)?;
+
+    if !settings.enabled {
+        return Err("请先在设置中启用 WebDAV 同步".to_string());
+    }
+
+    let project_root =
+        fs::canonicalize(project_root).map_err(|error| format!("项目目录不可访问：{error}"))?;
+    let baseline_dir = ensure_baseline_dir(&config_dir)?;
+    let mut baseline = load_baseline(&baseline_dir, &project_root)?;
+    let client = WebDavClient::new(&settings)?;
+    let project_url = build_project_remote_url(&client.root_url, &project_root)?;
+    let mut remote_snapshot = client.list_tree(&project_url)?;
+    let local_snapshot = scan_local_snapshot(&project_root)?;
+    let initial_pending_state =
+        collect_pending_state(&client, &baseline, &local_snapshot, &remote_snapshot)?;
+    let plan = build_resolve_plan(strategy, &initial_pending_state.items);
+
+    if !remote_snapshot.root_exists
+        && (!plan.upload_files.is_empty() || !plan.create_remote_directories.is_empty())
+    {
+        ensure_remote_project_root(&client, &project_root)?;
+        remote_snapshot.root_exists = true;
+    }
+
+    let execution = apply_resolve_plan(
+        &client,
+        &project_url,
+        &project_root,
+        &remote_snapshot,
+        &plan,
+    )?;
+
+    let final_local_snapshot =
+        if execution.changed_paths.is_empty() && execution.changed_directories.is_empty() {
+            local_snapshot
+        } else {
+            scan_local_snapshot(&project_root)?
+        };
+    let final_remote_snapshot = if execution.remote_mutated {
+        client.list_tree(&project_url)?
+    } else {
+        remote_snapshot
+    };
+
+    for path in execution.removed_file_paths.iter() {
+        baseline.files.remove(path);
+    }
+
+    for path in execution.resolved_file_paths.iter() {
+        if let (Some(local), Some(remote)) = (
+            final_local_snapshot.files.get(path),
+            final_remote_snapshot.files.get(path),
+        ) {
+            baseline.files.insert(
+                path.clone(),
+                BaselineFileEntry {
+                    content_hash: local.content_hash.clone(),
+                    remote_revision: remote.revision.clone(),
+                },
+            );
+        }
+    }
+
+    for path in execution.removed_directories.iter() {
+        baseline.directories.remove(path);
+    }
+
+    for path in execution.resolved_directories.iter() {
+        if final_local_snapshot.directories.contains(path)
+            && final_remote_snapshot.directories.contains(path)
+        {
+            baseline.directories.insert(path.clone());
+        }
+    }
+
+    save_baseline(&baseline_dir, &project_root, &baseline)?;
+    let pending_state = collect_pending_state(
+        &client,
+        &baseline,
+        &final_local_snapshot,
+        &final_remote_snapshot,
+    )?;
+    let changed_paths = execution.changed_paths.into_iter().collect::<Vec<_>>();
+    let changed_directories = execution
+        .changed_directories
+        .into_iter()
+        .collect::<Vec<_>>();
+    let message =
+        resolve_operation_message(strategy, plan.applied_item_count, pending_state.items.len());
+
+    Ok(SyncResponse {
+        status: if pending_state.items.is_empty() {
+            "success".to_string()
+        } else {
+            "warning".to_string()
+        },
+        message,
+        changed_paths,
+        changed_directories,
+        conflicts: pending_state.conflicts,
+        skipped_deletion_paths: pending_state.skipped_deletion_paths,
+        pending_items: pending_state.items,
+        synced_at: Some(current_timestamp_millis()),
+    })
 }
 
 fn execute_sync<R: Runtime>(
@@ -600,30 +847,21 @@ fn execute_sync<R: Runtime>(
     }
 
     save_baseline(&baseline_dir, &project_root, &baseline)?;
+    let pending_state = collect_pending_state(
+        &client,
+        &baseline,
+        &final_local_snapshot,
+        &final_remote_snapshot,
+    )?;
 
     let changed_paths = changed_paths.into_iter().collect::<Vec<_>>();
     let changed_directories = changed_directories.into_iter().collect::<Vec<_>>();
-    let skipped_deletion_paths = skipped_deletion_paths.into_iter().collect::<Vec<_>>();
-    let has_warnings = !conflicts.is_empty() || !skipped_deletion_paths.is_empty();
     let applied_count = changed_paths.len() + changed_directories.len();
-
-    let message = match (direction, applied_count, has_warnings) {
-        (SyncDirection::Pull, 0, false) => "没有需要拉取的更新".to_string(),
-        (SyncDirection::Push, 0, false) => "没有需要推送的更新".to_string(),
-        (SyncDirection::Pull, _, false) => format!("已拉取 {applied_count} 项更新"),
-        (SyncDirection::Push, _, false) => format!("已推送 {applied_count} 项更新"),
-        (SyncDirection::Pull, 0, true) => "拉取完成，但有未自动处理的差异".to_string(),
-        (SyncDirection::Push, 0, true) => "推送完成，但有未自动处理的差异".to_string(),
-        (SyncDirection::Pull, _, true) => {
-            format!("已拉取 {applied_count} 项更新，但仍有未自动处理的差异")
-        }
-        (SyncDirection::Push, _, true) => {
-            format!("已推送 {applied_count} 项更新，但仍有未自动处理的差异")
-        }
-    };
+    let pending_count = pending_state.items.len();
+    let message = sync_operation_message(direction, applied_count, pending_count);
 
     Ok(SyncResponse {
-        status: if has_warnings {
+        status: if pending_count > 0 {
             "warning".to_string()
         } else {
             "success".to_string()
@@ -631,8 +869,9 @@ fn execute_sync<R: Runtime>(
         message,
         changed_paths,
         changed_directories,
-        conflicts,
-        skipped_deletion_paths,
+        conflicts: pending_state.conflicts,
+        skipped_deletion_paths: pending_state.skipped_deletion_paths,
+        pending_items: pending_state.items,
         synced_at: Some(current_timestamp_millis()),
     })
 }
@@ -819,10 +1058,16 @@ fn collect_local_entries(
 
         let relative_path = relative_path_from_root(root, &path)?;
         let bytes = fs::read(&path).map_err(|error| format!("读取项目文件失败：{error}"))?;
+        let modified_at = entry
+            .metadata()
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(system_time_to_timestamp_millis);
         snapshot.files.insert(
             relative_path,
             LocalFileEntry {
                 content_hash: hash_bytes(&bytes),
+                modified_at,
             },
         );
     }
@@ -1140,6 +1385,632 @@ where
     keys
 }
 
+fn system_time_to_timestamp_millis(value: SystemTime) -> Option<u64> {
+    value
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_millis() as u64)
+}
+
+fn parse_http_date_millis(value: &str) -> Option<u64> {
+    httpdate::parse_http_date(value)
+        .ok()
+        .and_then(system_time_to_timestamp_millis)
+}
+
+fn remote_modified_at(revision: &RemoteRevision) -> Option<u64> {
+    revision
+        .last_modified
+        .as_deref()
+        .and_then(parse_http_date_millis)
+}
+
+fn latest_resolution_from_modified_times(
+    local_modified_at: Option<u64>,
+    remote_modified_at: Option<u64>,
+) -> (SyncLatestResolution, SyncLatestResolutionReason) {
+    match (local_modified_at, remote_modified_at) {
+        (Some(local), Some(remote)) if local > remote => (
+            SyncLatestResolution::Local,
+            SyncLatestResolutionReason::LocalNewer,
+        ),
+        (Some(local), Some(remote)) if remote > local => (
+            SyncLatestResolution::Remote,
+            SyncLatestResolutionReason::RemoteNewer,
+        ),
+        (Some(_), Some(_)) => (
+            SyncLatestResolution::Undetermined,
+            SyncLatestResolutionReason::TimestampsEqual,
+        ),
+        _ => (
+            SyncLatestResolution::Undetermined,
+            SyncLatestResolutionReason::MissingTimestamp,
+        ),
+    }
+}
+
+fn legacy_summary_from_pending_items(
+    items: &[SyncPendingItem],
+) -> (Vec<SyncConflict>, Vec<String>) {
+    let mut conflicts = Vec::new();
+    let mut skipped_deletion_paths = Vec::new();
+
+    for item in items {
+        match (item.entry_type, item.reason) {
+            (SyncPendingEntryType::File, SyncPendingReason::BothModified) => {
+                conflicts.push(SyncConflict {
+                    path: item.path.clone(),
+                    reason: "bothModified".to_string(),
+                });
+            }
+            (SyncPendingEntryType::File, SyncPendingReason::InitialContentMismatch) => {
+                conflicts.push(SyncConflict {
+                    path: item.path.clone(),
+                    reason: "initialContentMismatch".to_string(),
+                });
+            }
+            (
+                SyncPendingEntryType::File,
+                SyncPendingReason::LocalAhead | SyncPendingReason::LocalOnly,
+            ) => {
+                conflicts.push(SyncConflict {
+                    path: item.path.clone(),
+                    reason: "localOnlyChange".to_string(),
+                });
+            }
+            (
+                SyncPendingEntryType::File,
+                SyncPendingReason::RemoteAhead | SyncPendingReason::RemoteOnly,
+            ) => {
+                conflicts.push(SyncConflict {
+                    path: item.path.clone(),
+                    reason: "remoteOnlyChange".to_string(),
+                });
+            }
+            (_, SyncPendingReason::LocalDeletedRemotePresent)
+            | (_, SyncPendingReason::RemoteDeletedLocalPresent) => {
+                skipped_deletion_paths.push(item.path.clone());
+            }
+            _ => {}
+        }
+    }
+
+    (conflicts, skipped_deletion_paths)
+}
+
+fn collect_pending_state_with_resolver<F>(
+    baseline: &SyncBaseline,
+    local_snapshot: &LocalSnapshot,
+    remote_snapshot: &RemoteSnapshot,
+    mut remote_hash_resolver: F,
+) -> SyncResult<PendingState>
+where
+    F: FnMut(&str, &RemoteFileEntry) -> SyncResult<String>,
+{
+    let mut items = Vec::new();
+
+    let file_paths = collect_union_keys(
+        baseline.files.keys(),
+        local_snapshot.files.keys(),
+        remote_snapshot.files.keys(),
+    );
+
+    for path in file_paths {
+        let base = baseline.files.get(&path);
+        let local = local_snapshot.files.get(&path);
+        let remote = remote_snapshot.files.get(&path);
+        let local_changed = match (base, local) {
+            (Some(base), Some(local)) => local.content_hash != base.content_hash,
+            (Some(_), None) => true,
+            (None, Some(_)) => true,
+            (None, None) => false,
+        };
+        let remote_changed = match (base, remote) {
+            (Some(base), Some(remote)) => !base.remote_revision.matches(&remote.revision),
+            (Some(_), None) => true,
+            (None, Some(_)) => true,
+            (None, None) => false,
+        };
+        let local_modified_at = local.and_then(|entry| entry.modified_at);
+        let remote_modified_at = remote
+            .map(|entry| remote_modified_at(&entry.revision))
+            .flatten();
+
+        match (base, local, remote) {
+            (None, None, Some(_)) => items.push(SyncPendingItem {
+                path,
+                entry_type: SyncPendingEntryType::File,
+                reason: SyncPendingReason::RemoteOnly,
+                local_exists: false,
+                remote_exists: true,
+                local_modified_at: None,
+                remote_modified_at,
+                latest_resolution: SyncLatestResolution::Remote,
+                latest_resolution_reason: SyncLatestResolutionReason::RemoteOnly,
+            }),
+            (None, Some(_), None) => items.push(SyncPendingItem {
+                path,
+                entry_type: SyncPendingEntryType::File,
+                reason: SyncPendingReason::LocalOnly,
+                local_exists: true,
+                remote_exists: false,
+                local_modified_at,
+                remote_modified_at: None,
+                latest_resolution: SyncLatestResolution::Local,
+                latest_resolution_reason: SyncLatestResolutionReason::LocalOnly,
+            }),
+            (None, Some(local), Some(remote)) => {
+                let remote_hash = remote_hash_resolver(&path, remote)?;
+                if remote_hash != local.content_hash {
+                    let (latest_resolution, latest_resolution_reason) =
+                        latest_resolution_from_modified_times(
+                            local_modified_at,
+                            remote_modified_at,
+                        );
+                    items.push(SyncPendingItem {
+                        path,
+                        entry_type: SyncPendingEntryType::File,
+                        reason: SyncPendingReason::InitialContentMismatch,
+                        local_exists: true,
+                        remote_exists: true,
+                        local_modified_at,
+                        remote_modified_at,
+                        latest_resolution,
+                        latest_resolution_reason,
+                    });
+                }
+            }
+            (Some(_), Some(_), Some(_)) if !local_changed && !remote_changed => {}
+            (Some(_), Some(_), Some(_)) if local_changed && !remote_changed => {
+                items.push(SyncPendingItem {
+                    path,
+                    entry_type: SyncPendingEntryType::File,
+                    reason: SyncPendingReason::LocalAhead,
+                    local_exists: true,
+                    remote_exists: true,
+                    local_modified_at,
+                    remote_modified_at,
+                    latest_resolution: SyncLatestResolution::Local,
+                    latest_resolution_reason: SyncLatestResolutionReason::LocalAhead,
+                });
+            }
+            (Some(_), Some(_), Some(_)) if !local_changed && remote_changed => {
+                items.push(SyncPendingItem {
+                    path,
+                    entry_type: SyncPendingEntryType::File,
+                    reason: SyncPendingReason::RemoteAhead,
+                    local_exists: true,
+                    remote_exists: true,
+                    local_modified_at,
+                    remote_modified_at,
+                    latest_resolution: SyncLatestResolution::Remote,
+                    latest_resolution_reason: SyncLatestResolutionReason::RemoteAhead,
+                });
+            }
+            (Some(_), Some(local), Some(remote)) => {
+                let remote_hash = remote_hash_resolver(&path, remote)?;
+                if remote_hash != local.content_hash {
+                    let (latest_resolution, latest_resolution_reason) =
+                        latest_resolution_from_modified_times(
+                            local_modified_at,
+                            remote_modified_at,
+                        );
+                    items.push(SyncPendingItem {
+                        path,
+                        entry_type: SyncPendingEntryType::File,
+                        reason: SyncPendingReason::BothModified,
+                        local_exists: true,
+                        remote_exists: true,
+                        local_modified_at,
+                        remote_modified_at,
+                        latest_resolution,
+                        latest_resolution_reason,
+                    });
+                }
+            }
+            (Some(_), Some(_), None) if !local_changed => items.push(SyncPendingItem {
+                path,
+                entry_type: SyncPendingEntryType::File,
+                reason: SyncPendingReason::RemoteDeletedLocalPresent,
+                local_exists: true,
+                remote_exists: false,
+                local_modified_at,
+                remote_modified_at: None,
+                latest_resolution: SyncLatestResolution::Remote,
+                latest_resolution_reason: SyncLatestResolutionReason::RemoteDeletionOnly,
+            }),
+            (Some(_), Some(_), None) => items.push(SyncPendingItem {
+                path,
+                entry_type: SyncPendingEntryType::File,
+                reason: SyncPendingReason::RemoteDeletedLocalPresent,
+                local_exists: true,
+                remote_exists: false,
+                local_modified_at,
+                remote_modified_at: None,
+                latest_resolution: SyncLatestResolution::Undetermined,
+                latest_resolution_reason: SyncLatestResolutionReason::DeletionConflict,
+            }),
+            (Some(_), None, Some(_)) if !remote_changed => items.push(SyncPendingItem {
+                path,
+                entry_type: SyncPendingEntryType::File,
+                reason: SyncPendingReason::LocalDeletedRemotePresent,
+                local_exists: false,
+                remote_exists: true,
+                local_modified_at: None,
+                remote_modified_at,
+                latest_resolution: SyncLatestResolution::Local,
+                latest_resolution_reason: SyncLatestResolutionReason::LocalDeletionOnly,
+            }),
+            (Some(_), None, Some(_)) => items.push(SyncPendingItem {
+                path,
+                entry_type: SyncPendingEntryType::File,
+                reason: SyncPendingReason::LocalDeletedRemotePresent,
+                local_exists: false,
+                remote_exists: true,
+                local_modified_at: None,
+                remote_modified_at,
+                latest_resolution: SyncLatestResolution::Undetermined,
+                latest_resolution_reason: SyncLatestResolutionReason::DeletionConflict,
+            }),
+            (Some(_), None, None) | (None, None, None) => {}
+        }
+    }
+
+    let directory_paths = collect_union_keys(
+        baseline.directories.iter(),
+        local_snapshot.directories.iter(),
+        remote_snapshot.directories.iter(),
+    );
+
+    for path in directory_paths {
+        let in_base = baseline.directories.contains(&path);
+        let in_local = local_snapshot.directories.contains(&path);
+        let in_remote = remote_snapshot.directories.contains(&path);
+
+        match (in_base, in_local, in_remote) {
+            (false, true, false) => items.push(SyncPendingItem {
+                path,
+                entry_type: SyncPendingEntryType::Directory,
+                reason: SyncPendingReason::LocalOnly,
+                local_exists: true,
+                remote_exists: false,
+                local_modified_at: None,
+                remote_modified_at: None,
+                latest_resolution: SyncLatestResolution::Local,
+                latest_resolution_reason: SyncLatestResolutionReason::LocalOnly,
+            }),
+            (false, false, true) => items.push(SyncPendingItem {
+                path,
+                entry_type: SyncPendingEntryType::Directory,
+                reason: SyncPendingReason::RemoteOnly,
+                local_exists: false,
+                remote_exists: true,
+                local_modified_at: None,
+                remote_modified_at: None,
+                latest_resolution: SyncLatestResolution::Remote,
+                latest_resolution_reason: SyncLatestResolutionReason::RemoteOnly,
+            }),
+            (true, true, false) => items.push(SyncPendingItem {
+                path,
+                entry_type: SyncPendingEntryType::Directory,
+                reason: SyncPendingReason::RemoteDeletedLocalPresent,
+                local_exists: true,
+                remote_exists: false,
+                local_modified_at: None,
+                remote_modified_at: None,
+                latest_resolution: SyncLatestResolution::Undetermined,
+                latest_resolution_reason: SyncLatestResolutionReason::DirectoryDeletionConflict,
+            }),
+            (true, false, true) => items.push(SyncPendingItem {
+                path,
+                entry_type: SyncPendingEntryType::Directory,
+                reason: SyncPendingReason::LocalDeletedRemotePresent,
+                local_exists: false,
+                remote_exists: true,
+                local_modified_at: None,
+                remote_modified_at: None,
+                latest_resolution: SyncLatestResolution::Undetermined,
+                latest_resolution_reason: SyncLatestResolutionReason::DirectoryDeletionConflict,
+            }),
+            _ => {}
+        }
+    }
+
+    let (conflicts, skipped_deletion_paths) = legacy_summary_from_pending_items(&items);
+    Ok(PendingState {
+        items,
+        conflicts,
+        skipped_deletion_paths,
+    })
+}
+
+fn collect_pending_state(
+    client: &WebDavClient,
+    baseline: &SyncBaseline,
+    local_snapshot: &LocalSnapshot,
+    remote_snapshot: &RemoteSnapshot,
+) -> SyncResult<PendingState> {
+    let mut remote_hash_cache = BTreeMap::new();
+    collect_pending_state_with_resolver(
+        baseline,
+        local_snapshot,
+        remote_snapshot,
+        |path, remote| fetch_remote_file_hash(client, remote, path, &mut remote_hash_cache),
+    )
+}
+
+fn sync_operation_message(
+    direction: SyncDirection,
+    applied_count: usize,
+    pending_count: usize,
+) -> String {
+    match (direction, applied_count, pending_count) {
+        (SyncDirection::Pull, 0, 0) => "没有需要拉取的更新".to_string(),
+        (SyncDirection::Push, 0, 0) => "没有需要推送的更新".to_string(),
+        (SyncDirection::Pull, _, 0) => format!("已拉取 {applied_count} 项更新"),
+        (SyncDirection::Push, _, 0) => format!("已推送 {applied_count} 项更新"),
+        (SyncDirection::Pull, 0, pending) => format!("拉取完成，但仍有 {pending} 项待处理差异"),
+        (SyncDirection::Push, 0, pending) => format!("推送完成，但仍有 {pending} 项待处理差异"),
+        (SyncDirection::Pull, _, pending) => {
+            format!("已拉取 {applied_count} 项更新，但仍有 {pending} 项待处理差异")
+        }
+        (SyncDirection::Push, _, pending) => {
+            format!("已推送 {applied_count} 项更新，但仍有 {pending} 项待处理差异")
+        }
+    }
+}
+
+fn resolve_operation_message(
+    strategy: SyncResolveStrategy,
+    applied_count: usize,
+    remaining_count: usize,
+) -> String {
+    let action = match strategy {
+        SyncResolveStrategy::Latest => "按较新一端处理",
+        SyncResolveStrategy::Local => "以本地为准处理",
+        SyncResolveStrategy::Remote => "以远端为准处理",
+    };
+
+    match (applied_count, remaining_count) {
+        (0, 0) => "没有需要处理的待处理差异".to_string(),
+        (_, 0) => format!("已{action} {applied_count} 项待处理差异"),
+        (0, remaining) => format!("未处理任何差异，仍有 {remaining} 项待处理差异"),
+        (_, remaining) => {
+            format!("已{action} {applied_count} 项待处理差异，仍有 {remaining} 项待处理差异")
+        }
+    }
+}
+
+fn planned_resolution_for_item(
+    strategy: SyncResolveStrategy,
+    item: &SyncPendingItem,
+) -> Option<SyncLatestResolution> {
+    match strategy {
+        SyncResolveStrategy::Local => Some(SyncLatestResolution::Local),
+        SyncResolveStrategy::Remote => Some(SyncLatestResolution::Remote),
+        SyncResolveStrategy::Latest => match item.latest_resolution {
+            SyncLatestResolution::Undetermined => None,
+            resolution => Some(resolution),
+        },
+    }
+}
+
+fn build_resolve_plan(
+    strategy: SyncResolveStrategy,
+    pending_items: &[SyncPendingItem],
+) -> ResolvePlan {
+    let mut plan = ResolvePlan::default();
+
+    for item in pending_items {
+        let Some(resolution) = planned_resolution_for_item(strategy, item) else {
+            continue;
+        };
+
+        match (
+            item.entry_type,
+            resolution,
+            item.local_exists,
+            item.remote_exists,
+        ) {
+            (SyncPendingEntryType::File, SyncLatestResolution::Local, true, true)
+            | (SyncPendingEntryType::File, SyncLatestResolution::Local, true, false) => {
+                plan.upload_files.insert(item.path.clone());
+                plan.resolved_file_paths.insert(item.path.clone());
+            }
+            (SyncPendingEntryType::File, SyncLatestResolution::Remote, true, true)
+            | (SyncPendingEntryType::File, SyncLatestResolution::Remote, false, true) => {
+                plan.download_files.insert(item.path.clone());
+                plan.resolved_file_paths.insert(item.path.clone());
+            }
+            (SyncPendingEntryType::File, SyncLatestResolution::Local, false, true) => {
+                plan.delete_remote_files.insert(item.path.clone());
+                plan.removed_file_paths.insert(item.path.clone());
+            }
+            (SyncPendingEntryType::File, SyncLatestResolution::Remote, true, false) => {
+                plan.delete_local_files.insert(item.path.clone());
+                plan.removed_file_paths.insert(item.path.clone());
+            }
+            (SyncPendingEntryType::Directory, SyncLatestResolution::Local, true, false) => {
+                plan.create_remote_directories.insert(item.path.clone());
+                plan.resolved_directory_paths.insert(item.path.clone());
+            }
+            (SyncPendingEntryType::Directory, SyncLatestResolution::Remote, false, true) => {
+                plan.create_local_directories.insert(item.path.clone());
+                plan.resolved_directory_paths.insert(item.path.clone());
+            }
+            (SyncPendingEntryType::Directory, SyncLatestResolution::Local, false, true) => {
+                plan.delete_remote_directories.insert(item.path.clone());
+                plan.removed_directory_paths.insert(item.path.clone());
+            }
+            (SyncPendingEntryType::Directory, SyncLatestResolution::Remote, true, false) => {
+                plan.delete_local_directories.insert(item.path.clone());
+                plan.removed_directory_paths.insert(item.path.clone());
+            }
+            _ => continue,
+        }
+
+        plan.applied_item_count += 1;
+    }
+
+    plan
+}
+
+fn path_depth(path: &str) -> usize {
+    path.split('/')
+        .filter(|segment| !segment.is_empty())
+        .count()
+}
+
+fn path_is_within_directory(path: &str, directory: &str) -> bool {
+    path == directory || path.starts_with(&format!("{directory}/"))
+}
+
+fn path_has_deleted_ancestor(path: &str, deleted_directories: &BTreeSet<String>) -> bool {
+    deleted_directories
+        .iter()
+        .any(|directory| directory != path && path_is_within_directory(path, directory))
+}
+
+fn sorted_paths(paths: &BTreeSet<String>, descending: bool) -> Vec<String> {
+    let mut values = paths.iter().cloned().collect::<Vec<_>>();
+    values.sort_by(|left, right| {
+        let depth_cmp = path_depth(left).cmp(&path_depth(right));
+        if descending {
+            depth_cmp.reverse().then_with(|| left.cmp(right).reverse())
+        } else {
+            depth_cmp.then_with(|| left.cmp(right))
+        }
+    });
+    values
+}
+
+fn delete_local_file(project_root: &Path, relative_path: &str) -> SyncResult<()> {
+    let target_path = project_root.join(Path::new(relative_path));
+    if !target_path.exists() {
+        return Ok(());
+    }
+
+    fs::remove_file(&target_path).map_err(|error| format!("删除本地文件失败：{error}"))
+}
+
+fn delete_local_directory(project_root: &Path, relative_path: &str) -> SyncResult<()> {
+    let target_path = project_root.join(Path::new(relative_path));
+    if !target_path.exists() {
+        return Ok(());
+    }
+
+    fs::remove_dir_all(&target_path).map_err(|error| format!("删除本地目录失败：{error}"))
+}
+
+fn delete_remote_file(
+    client: &WebDavClient,
+    remote_snapshot: &RemoteSnapshot,
+    path: &str,
+) -> SyncResult<()> {
+    if let Some(remote) = remote_snapshot.files.get(path) {
+        client.delete_resource(&remote.file_url, SyncPendingEntryType::File)?;
+    }
+
+    Ok(())
+}
+
+fn delete_remote_directory(client: &WebDavClient, project_url: &Url, path: &str) -> SyncResult<()> {
+    client.delete_resource(
+        &join_relative_path(project_url, path)?,
+        SyncPendingEntryType::Directory,
+    )
+}
+
+fn apply_resolve_plan(
+    client: &WebDavClient,
+    project_url: &Url,
+    project_root: &Path,
+    remote_snapshot: &RemoteSnapshot,
+    plan: &ResolvePlan,
+) -> SyncResult<ResolveExecution> {
+    let mut execution = ResolveExecution {
+        resolved_file_paths: plan.resolved_file_paths.clone(),
+        removed_file_paths: plan.removed_file_paths.clone(),
+        resolved_directories: plan.resolved_directory_paths.clone(),
+        removed_directories: plan.removed_directory_paths.clone(),
+        ..ResolveExecution::default()
+    };
+    let mut existing_remote_directories = remote_snapshot.directories.clone();
+
+    for path in sorted_paths(&plan.create_remote_directories, false) {
+        ensure_remote_directory(client, project_url, &path, &mut existing_remote_directories)?;
+        execution.remote_mutated = true;
+    }
+
+    for path in sorted_paths(&plan.create_local_directories, false) {
+        create_local_directory(project_root, &path)?;
+        execution.changed_directories.insert(path);
+    }
+
+    for path in plan.upload_files.iter().cloned().collect::<Vec<_>>() {
+        upload_local_file(
+            client,
+            project_url,
+            project_root,
+            &path,
+            &mut existing_remote_directories,
+        )?;
+        execution.remote_mutated = true;
+    }
+
+    for path in plan.download_files.iter().cloned().collect::<Vec<_>>() {
+        let remote = remote_snapshot
+            .files
+            .get(&path)
+            .ok_or_else(|| format!("远端文件不存在：{path}"))?;
+        download_remote_file(
+            client,
+            remote,
+            project_root,
+            &path,
+            &mut execution.changed_paths,
+        )?;
+    }
+
+    for path in plan.delete_local_files.iter().cloned().collect::<Vec<_>>() {
+        if path_has_deleted_ancestor(&path, &plan.delete_local_directories) {
+            continue;
+        }
+
+        delete_local_file(project_root, &path)?;
+        execution.changed_paths.insert(path);
+    }
+
+    for path in plan.delete_remote_files.iter().cloned().collect::<Vec<_>>() {
+        if path_has_deleted_ancestor(&path, &plan.delete_remote_directories) {
+            continue;
+        }
+
+        delete_remote_file(client, remote_snapshot, &path)?;
+        execution.remote_mutated = true;
+    }
+
+    for path in sorted_paths(&plan.delete_local_directories, true) {
+        if path_has_deleted_ancestor(&path, &plan.delete_local_directories) {
+            continue;
+        }
+
+        delete_local_directory(project_root, &path)?;
+        execution.changed_directories.insert(path);
+    }
+
+    for path in sorted_paths(&plan.delete_remote_directories, true) {
+        if path_has_deleted_ancestor(&path, &plan.delete_remote_directories) {
+            continue;
+        }
+
+        delete_remote_directory(client, project_url, &path)?;
+        execution.remote_mutated = true;
+    }
+
+    Ok(execution)
+}
+
 fn hash_bytes(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     format!("{digest:x}")
@@ -1363,5 +2234,209 @@ mod tests {
 
         assert!(baseline.matches(&same));
         assert!(!baseline.matches(&changed));
+    }
+
+    fn remote_file_entry(path: &str, revision: RemoteRevision) -> RemoteFileEntry {
+        RemoteFileEntry {
+            file_url: Url::parse(&format!(
+                "https://dav.example.com/root/MossWriter/project-a/{path}"
+            ))
+            .unwrap(),
+            revision,
+        }
+    }
+
+    #[test]
+    fn collect_pending_state_detects_initial_content_mismatch_and_prefers_newer_remote() {
+        let mut local_snapshot = LocalSnapshot::default();
+        local_snapshot.files.insert(
+            "draft.md".to_string(),
+            LocalFileEntry {
+                content_hash: "local".to_string(),
+                modified_at: Some(1_000),
+            },
+        );
+
+        let mut remote_snapshot = RemoteSnapshot {
+            root_exists: true,
+            ..RemoteSnapshot::default()
+        };
+        remote_snapshot.files.insert(
+            "draft.md".to_string(),
+            remote_file_entry(
+                "draft.md",
+                RemoteRevision {
+                    etag: Some("\"draft-remote\"".to_string()),
+                    last_modified: Some("Thu, 01 Jan 1970 00:00:02 GMT".to_string()),
+                    size: Some(5),
+                },
+            ),
+        );
+
+        let state = collect_pending_state_with_resolver(
+            &SyncBaseline::default(),
+            &local_snapshot,
+            &remote_snapshot,
+            |_path, _remote| Ok("remote".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(state.items.len(), 1);
+        assert_eq!(
+            state.items[0].reason,
+            SyncPendingReason::InitialContentMismatch
+        );
+        assert_eq!(
+            state.items[0].latest_resolution,
+            SyncLatestResolution::Remote
+        );
+        assert_eq!(
+            state.items[0].latest_resolution_reason,
+            SyncLatestResolutionReason::RemoteNewer
+        );
+    }
+
+    #[test]
+    fn collect_pending_state_marks_local_ahead_and_local_deletion_only() {
+        let mut baseline = SyncBaseline::default();
+        baseline.files.insert(
+            "chapter.md".to_string(),
+            BaselineFileEntry {
+                content_hash: "base".to_string(),
+                remote_revision: RemoteRevision {
+                    etag: Some("\"chapter-base\"".to_string()),
+                    last_modified: Some("Thu, 01 Jan 1970 00:00:01 GMT".to_string()),
+                    size: Some(4),
+                },
+            },
+        );
+        baseline.files.insert(
+            "old.md".to_string(),
+            BaselineFileEntry {
+                content_hash: "old".to_string(),
+                remote_revision: RemoteRevision {
+                    etag: Some("\"old-base\"".to_string()),
+                    last_modified: Some("Thu, 01 Jan 1970 00:00:01 GMT".to_string()),
+                    size: Some(3),
+                },
+            },
+        );
+
+        let mut local_snapshot = LocalSnapshot::default();
+        local_snapshot.files.insert(
+            "chapter.md".to_string(),
+            LocalFileEntry {
+                content_hash: "local".to_string(),
+                modified_at: Some(5_000),
+            },
+        );
+
+        let mut remote_snapshot = RemoteSnapshot {
+            root_exists: true,
+            ..RemoteSnapshot::default()
+        };
+        remote_snapshot.files.insert(
+            "chapter.md".to_string(),
+            remote_file_entry(
+                "chapter.md",
+                RemoteRevision {
+                    etag: Some("\"chapter-base\"".to_string()),
+                    last_modified: Some("Thu, 01 Jan 1970 00:00:01 GMT".to_string()),
+                    size: Some(4),
+                },
+            ),
+        );
+        remote_snapshot.files.insert(
+            "old.md".to_string(),
+            remote_file_entry(
+                "old.md",
+                RemoteRevision {
+                    etag: Some("\"old-base\"".to_string()),
+                    last_modified: Some("Thu, 01 Jan 1970 00:00:01 GMT".to_string()),
+                    size: Some(3),
+                },
+            ),
+        );
+
+        let state = collect_pending_state_with_resolver(
+            &baseline,
+            &local_snapshot,
+            &remote_snapshot,
+            |_path, _remote| unreachable!("hash resolver should not be used"),
+        )
+        .unwrap();
+
+        assert_eq!(state.items.len(), 2);
+        assert_eq!(state.items[0].path, "chapter.md");
+        assert_eq!(state.items[0].reason, SyncPendingReason::LocalAhead);
+        assert_eq!(
+            state.items[0].latest_resolution,
+            SyncLatestResolution::Local
+        );
+        assert_eq!(
+            state.items[0].latest_resolution_reason,
+            SyncLatestResolutionReason::LocalAhead
+        );
+
+        assert_eq!(state.items[1].path, "old.md");
+        assert_eq!(
+            state.items[1].reason,
+            SyncPendingReason::LocalDeletedRemotePresent
+        );
+        assert_eq!(
+            state.items[1].latest_resolution,
+            SyncLatestResolution::Local
+        );
+        assert_eq!(
+            state.items[1].latest_resolution_reason,
+            SyncLatestResolutionReason::LocalDeletionOnly
+        );
+    }
+
+    #[test]
+    fn collect_pending_state_marks_delete_conflict_as_undetermined() {
+        let mut baseline = SyncBaseline::default();
+        baseline.files.insert(
+            "draft.md".to_string(),
+            BaselineFileEntry {
+                content_hash: "base".to_string(),
+                remote_revision: RemoteRevision {
+                    etag: Some("\"draft-base\"".to_string()),
+                    last_modified: Some("Thu, 01 Jan 1970 00:00:01 GMT".to_string()),
+                    size: Some(4),
+                },
+            },
+        );
+
+        let mut local_snapshot = LocalSnapshot::default();
+        local_snapshot.files.insert(
+            "draft.md".to_string(),
+            LocalFileEntry {
+                content_hash: "local-new".to_string(),
+                modified_at: Some(5_000),
+            },
+        );
+
+        let state = collect_pending_state_with_resolver(
+            &baseline,
+            &local_snapshot,
+            &RemoteSnapshot::default(),
+            |_path, _remote| unreachable!("hash resolver should not be used"),
+        )
+        .unwrap();
+
+        assert_eq!(state.items.len(), 1);
+        assert_eq!(
+            state.items[0].reason,
+            SyncPendingReason::RemoteDeletedLocalPresent
+        );
+        assert_eq!(
+            state.items[0].latest_resolution,
+            SyncLatestResolution::Undetermined
+        );
+        assert_eq!(
+            state.items[0].latest_resolution_reason,
+            SyncLatestResolutionReason::DeletionConflict
+        );
     }
 }

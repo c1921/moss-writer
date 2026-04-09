@@ -26,6 +26,7 @@ import {
   getSyncSettings as getSyncSettingsCommand,
   listFiles,
   openProject,
+  resolveSyncPending as resolveSyncPendingCommand,
   renameFile as renameFileCommand,
   saveSyncSettings as saveSyncSettingsCommand,
   syncPull as syncPullCommand,
@@ -35,6 +36,7 @@ import {
 import { listenProjectFilesChanged } from "../shared/tauri/events";
 import type {
   SyncDirection,
+  SyncResolveStrategy,
   SyncResponse,
   SyncState,
 } from "../features/sync/types";
@@ -79,6 +81,7 @@ interface WriterSyncActionsContextValue {
   testSyncConnection: (settings: WebDavSettings) => Promise<SyncResponse | null>;
   pullSync: () => Promise<SyncResponse | null>;
   pushSync: () => Promise<SyncResponse | null>;
+  resolveSyncPending: (strategy: SyncResolveStrategy) => Promise<SyncResponse | null>;
 }
 
 const WriterProjectStateContext = createContext<WriterProjectStateContextValue | null>(null);
@@ -134,6 +137,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     testSyncConnection: async () => null,
     pullSync: async () => null,
     pushSync: async () => null,
+    resolveSyncPending: async () => null,
   });
   const syncActionsRef = useRef<WriterSyncActionsContextValue | null>(null);
   const syncProjectFilesImplRef = useRef<(changedPaths?: string[]) => Promise<FileEntry[]>>(
@@ -194,6 +198,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       changedDirectories: [],
       conflicts: [],
       skippedDeletionPaths: [],
+      pendingItems: [],
       syncedAt: null,
     };
   }
@@ -233,10 +238,11 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
   async function performSync(
     direction: Exclude<SyncDirection, "test">,
+    command: () => Promise<SyncResponse>,
     options: {
       allowWithoutProjectState?: boolean;
       skipFlush?: boolean;
-      refreshAfterPull?: boolean;
+      refreshLocalChanges?: boolean;
       surfaceAppError?: boolean;
     } = {},
   ) {
@@ -248,7 +254,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       const {
         allowWithoutProjectState = false,
         skipFlush = false,
-        refreshAfterPull = true,
+        refreshLocalChanges = false,
         surfaceAppError = false,
       } = options;
 
@@ -273,7 +279,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
           lastDirection: direction,
         }));
 
-        const response = direction === "pull" ? await syncPullCommand() : await syncPushCommand();
+        const response = await command();
 
         setSyncStateWith((current) => ({
           ...current,
@@ -291,7 +297,10 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
           lastPushCompletedAtRef.current = response.syncedAt ?? Date.now();
         }
 
-        if (direction === "pull" && refreshAfterPull) {
+        if (
+          refreshLocalChanges &&
+          (response.changedPaths.length > 0 || response.changedDirectories.length > 0)
+        ) {
           await syncProjectFilesImplRef.current(response.changedPaths);
         }
 
@@ -431,10 +440,10 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
       const resolvedSettings = await loadSyncSettingsInternal();
       if (resolvedSettings.enabled && resolvedSettings.autoPullOnOpen) {
-        const pullResponse = await performSync("pull", {
+        const pullResponse = await performSync("pull", () => syncPullCommand(), {
           allowWithoutProjectState: true,
           skipFlush: true,
-          refreshAfterPull: false,
+          refreshLocalChanges: false,
           surfaceAppError: true,
         });
 
@@ -600,11 +609,26 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
   };
 
   syncActionsImplRef.current.pullSync = async () => {
-    return performSync("pull");
+    return performSync("pull", () => syncPullCommand(), {
+      refreshLocalChanges: true,
+    });
   };
 
   syncActionsImplRef.current.pushSync = async () => {
-    return performSync("push");
+    return performSync("push", () => syncPushCommand());
+  };
+
+  syncActionsImplRef.current.resolveSyncPending = async (strategy) => {
+    const direction: Exclude<SyncDirection, "pull" | "push" | "test"> =
+      strategy === "latest"
+        ? "resolveLatest"
+        : strategy === "local"
+          ? "resolveLocal"
+          : "resolveRemote";
+
+    return performSync(direction, () => resolveSyncPendingCommand(strategy), {
+      refreshLocalChanges: strategy !== "local",
+    });
   };
 
   if (!actionsRef.current) {
@@ -631,6 +655,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       testSyncConnection: (settings) => syncActionsImplRef.current.testSyncConnection(settings),
       pullSync: () => syncActionsImplRef.current.pullSync(),
       pushSync: () => syncActionsImplRef.current.pushSync(),
+      resolveSyncPending: (strategy) => syncActionsImplRef.current.resolveSyncPending(strategy),
     };
   }
 
@@ -669,7 +694,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
           return;
         }
 
-        await performSync("push", {
+        await performSync("push", () => syncPushCommand(), {
           skipFlush: true,
           surfaceAppError: true,
         });

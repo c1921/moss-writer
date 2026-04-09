@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 import type { FileEntry, ProjectSnapshot } from "../../app/types";
 import type { WebDavSettings } from "../../features/settings/types";
-import type { SyncResponse } from "../../features/sync/types";
+import type { SyncResolveStrategy, SyncResponse } from "../../features/sync/types";
 
 function command<T>(name: string, args?: Record<string, unknown>) {
   return invoke<T>(name, args);
@@ -58,4 +58,8 @@ export function syncPush() {
 
 export function syncPull() {
   return command<SyncResponse>("sync_pull");
+}
+
+export function resolveSyncPending(strategy: SyncResolveStrategy) {
+  return command<SyncResponse>("resolve_sync_pending", { strategy });
 }

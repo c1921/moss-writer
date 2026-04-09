@@ -9,7 +9,7 @@ use tauri::{AppHandle, State};
 
 use crate::{
     state::ProjectState,
-    sync::{self, SyncResponse, SyncSettings},
+    sync::{self, SyncResolveStrategy, SyncResponse, SyncSettings},
 };
 
 type AppResult<T> = Result<T, String>;
@@ -149,6 +149,18 @@ pub fn sync_push(app: AppHandle, state: State<'_, ProjectState>) -> AppResult<Sy
 pub fn sync_pull(app: AppHandle, state: State<'_, ProjectState>) -> AppResult<SyncResponse> {
     let root = state.get_root()?;
     let response = sync::execute_sync_pull(&app, &root)?;
+    state.suppress_paths(response.changed_paths.clone());
+    Ok(response)
+}
+
+#[tauri::command]
+pub fn resolve_sync_pending(
+    strategy: SyncResolveStrategy,
+    app: AppHandle,
+    state: State<'_, ProjectState>,
+) -> AppResult<SyncResponse> {
+    let root = state.get_root()?;
+    let response = sync::resolve_sync_pending(&app, &root, strategy)?;
     state.suppress_paths(response.changed_paths.clone());
     Ok(response)
 }

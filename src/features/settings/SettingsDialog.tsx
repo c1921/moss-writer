@@ -11,6 +11,16 @@ import {
   useWriterSyncActions,
   useWriterSyncState,
 } from "@/app/WriterAppContext"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -35,6 +45,11 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { WebDavSettings } from "@/features/settings/types"
+import type {
+  SyncLatestResolutionReason,
+  SyncPendingItem,
+  SyncResolveStrategy,
+} from "@/features/sync/types"
 import { getBaseName } from "@/shared/utils/fileNames"
 
 interface SettingsDialogProps {
@@ -78,22 +93,174 @@ function getRemotePreview(rootUrl: string, projectPath: string | null) {
   return `${normalizedRoot}/${relativePath}`
 }
 
-function getConflictLabel(reason: string) {
-  switch (reason) {
+function getPendingSubject(item: SyncPendingItem) {
+  return item.entryType === "directory" ? "目录" : "文件"
+}
+
+function formatTimestamp(timestamp: number | null) {
+  if (timestamp === null) {
+    return "未知"
+  }
+
+  return new Date(timestamp).toLocaleString("zh-CN", {
+    hour12: false,
+  })
+}
+
+function getPendingTitle(item: SyncPendingItem) {
+  const subject = getPendingSubject(item)
+
+  switch (item.reason) {
     case "bothModified":
-      return "本地和远端都改过"
+      return `本地和远端的${subject}都已变更`
     case "initialContentMismatch":
-      return "初次同步时内容不一致"
-    case "localModifiedRemoteDeleted":
-      return "本地修改过，但远端已删除"
-    case "localOnlyChange":
-      return "这是本地独有改动，当前方向不会自动处理"
-    case "remoteModifiedLocalDeleted":
-      return "远端修改过，但本地已删除"
-    case "remoteOnlyChange":
-      return "这是远端独有改动，当前方向不会自动处理"
+      return `同名${subject}在本地和远端都存在，但尚未建立同步基线且内容不同`
+    case "localAhead":
+      return `本地${subject}较新，远端仍保留旧版本`
+    case "remoteAhead":
+      return `远端${subject}较新，本地仍保留旧版本`
+    case "localOnly":
+      return `${subject}只存在于本地`
+    case "remoteOnly":
+      return `${subject}只存在于远端`
+    case "localDeletedRemotePresent":
+      return `本地已删除该${subject}，远端仍保留`
+    case "remoteDeletedLocalPresent":
+      return `远端已删除该${subject}，本地仍保留`
     default:
-      return "存在未自动处理的差异"
+      return `该${subject}仍有待处理差异`
+  }
+}
+
+function getLatestResolutionReasonLabel(reason: SyncLatestResolutionReason) {
+  switch (reason) {
+    case "localOnly":
+      return "按较新判断会保留本地版本，因为只有本地存在"
+    case "remoteOnly":
+      return "按较新判断会保留远端版本，因为只有远端存在"
+    case "localAhead":
+      return "按较新判断会保留本地版本，因为只有本地相对同步基线有更新"
+    case "remoteAhead":
+      return "按较新判断会保留远端版本，因为只有远端相对同步基线有更新"
+    case "localNewer":
+      return "按较新判断会保留本地版本，因为本地修改时间更晚"
+    case "remoteNewer":
+      return "按较新判断会保留远端版本，因为远端修改时间更晚"
+    case "localDeletionOnly":
+      return "按较新判断会保留本地删除结果，因为远端保留的是旧版本"
+    case "remoteDeletionOnly":
+      return "按较新判断会保留远端删除结果，因为本地保留的是旧版本"
+    case "timestampsEqual":
+      return "按较新无法判断：本地和远端时间相同"
+    case "missingTimestamp":
+      return "按较新无法判断：缺少可比较的时间信息"
+    case "deletionConflict":
+      return "按较新无法判断：一边删除、另一边也有保留或修改"
+    case "directoryDeletionConflict":
+      return "按较新无法判断：目录删除差异需要你明确选择"
+    default:
+      return "按较新无法判断"
+  }
+}
+
+function summarizePendingItems(pendingItems: SyncPendingItem[]) {
+  return pendingItems.reduce(
+    (summary, item) => {
+      if (item.entryType === "file") {
+        summary.fileCount += 1
+      } else {
+        summary.directoryCount += 1
+      }
+
+      if (item.latestResolution !== "undetermined") {
+        summary.latestResolvableCount += 1
+      } else {
+        summary.latestUndeterminedCount += 1
+      }
+
+      return summary
+    },
+    {
+      fileCount: 0,
+      directoryCount: 0,
+      latestResolvableCount: 0,
+      latestUndeterminedCount: 0,
+    }
+  )
+}
+
+function summarizeResolvePlan(
+  pendingItems: SyncPendingItem[],
+  strategy: SyncResolveStrategy
+) {
+  return pendingItems.reduce(
+    (summary, item) => {
+      const resolution =
+        strategy === "latest"
+          ? item.latestResolution
+          : strategy === "local"
+            ? "local"
+            : "remote"
+
+      if (resolution === "undetermined") {
+        summary.undeterminedCount += 1
+        return summary
+      }
+
+      const winnerIsLocal = resolution === "local"
+      const createOnTarget = winnerIsLocal
+        ? item.localExists && !item.remoteExists
+        : !item.localExists && item.remoteExists
+      const deleteOnTarget = winnerIsLocal
+        ? !item.localExists && item.remoteExists
+        : item.localExists && !item.remoteExists
+      const overwriteOnTarget = item.localExists && item.remoteExists
+
+      if (item.entryType === "file") {
+        if (createOnTarget) summary.createFiles += 1
+        if (overwriteOnTarget) summary.overwriteFiles += 1
+        if (deleteOnTarget) summary.deleteFiles += 1
+      } else {
+        if (createOnTarget) summary.createDirectories += 1
+        if (deleteOnTarget) summary.deleteDirectories += 1
+      }
+
+      return summary
+    },
+    {
+      createFiles: 0,
+      overwriteFiles: 0,
+      deleteFiles: 0,
+      createDirectories: 0,
+      deleteDirectories: 0,
+      undeterminedCount: 0,
+    }
+  )
+}
+
+function getResolveStrategyTitle(strategy: SyncResolveStrategy) {
+  switch (strategy) {
+    case "latest":
+      return "按较新一端覆盖"
+    case "local":
+      return "全部以本地为准"
+    case "remote":
+      return "全部以远端为准"
+    default:
+      return "批量处理差异"
+  }
+}
+
+function getResolveStrategyDescription(strategy: SyncResolveStrategy) {
+  switch (strategy) {
+    case "latest":
+      return "会把能明确判断较新的一端同步到另一端；无法判断的项会保留待处理。"
+    case "local":
+      return "会把本地当前状态同步到远端，远端可能被创建、覆盖或删除。"
+    case "remote":
+      return "会把远端当前状态同步到本地，本地可能被创建、覆盖或删除。"
+    default:
+      return "会按你选择的策略批量处理当前待处理差异。"
   }
 }
 
@@ -113,12 +280,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("general")
+  const [resolveStrategy, setResolveStrategy] = useState<SyncResolveStrategy | null>(null)
 
   useEffect(() => {
     if (open) {
       setForm(syncState.settings)
       setSaveFeedback(null)
       setActiveTab("general")
+      setResolveStrategy(null)
     }
   }, [open, syncState.settings])
 
@@ -136,6 +305,20 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       syncState.settings.password
   )
   const actionsDisabled = syncState.isSyncing || isSaving
+  const pendingItems = syncState.lastResult?.pendingItems ?? []
+  const pendingSummary = useMemo(
+    () => summarizePendingItems(pendingItems),
+    [pendingItems]
+  )
+  const latestPreview = useMemo(
+    () => summarizeResolvePlan(pendingItems, "latest"),
+    [pendingItems]
+  )
+  const currentResolvePreview = useMemo(
+    () =>
+      resolveStrategy === null ? null : summarizeResolvePlan(pendingItems, resolveStrategy),
+    [pendingItems, resolveStrategy]
+  )
 
   function updateField<Key extends keyof WebDavSettings>(
     key: Key,
@@ -211,10 +394,29 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     await syncActions.pushSync()
   }
 
+  async function handleConfirmResolve() {
+    if (!resolveStrategy) {
+      return
+    }
+
+    try {
+      if (isDirty) {
+        await persistForm()
+      }
+    } catch {
+      return
+    }
+
+    const strategy = resolveStrategy
+    setResolveStrategy(null)
+    await syncActions.resolveSyncPending(strategy)
+  }
+
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="flex h-[min(38rem,calc(100vh-3rem))] max-w-[min(52rem,calc(100%-1.5rem))] flex-col overflow-hidden p-0 sm:max-w-[52rem]">
-        <form className="flex min-h-0 flex-1 flex-col gap-0" onSubmit={handleSubmit}>
+    <>
+      <Dialog onOpenChange={onOpenChange} open={open}>
+        <DialogContent className="flex h-[min(38rem,calc(100vh-3rem))] max-w-[min(52rem,calc(100%-1.5rem))] flex-col overflow-hidden p-0 sm:max-w-[52rem]">
+          <form className="flex min-h-0 flex-1 flex-col gap-0" onSubmit={handleSubmit}>
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4">
             <DialogTitle>设置</DialogTitle>
             <DialogDescription>
@@ -470,22 +672,79 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       <Alert variant={syncState.lastResult.status === "error" ? "destructive" : "default"}>
                         <AlertTitle>{syncState.lastResult.message}</AlertTitle>
                         <AlertDescription>
-                          <div className="space-y-1">
+                          <div className="space-y-3">
                             {syncState.lastResult.changedPaths.length > 0 ? (
-                              <p>已处理文件：{syncState.lastResult.changedPaths.length}</p>
+                              <p>本地已更新文件：{syncState.lastResult.changedPaths.length}</p>
                             ) : null}
                             {syncState.lastResult.changedDirectories.length > 0 ? (
-                              <p>已处理目录：{syncState.lastResult.changedDirectories.length}</p>
+                              <p>本地已更新目录：{syncState.lastResult.changedDirectories.length}</p>
                             ) : null}
-                            {syncState.lastResult.conflicts.length > 0 ? (
-                              <p>
-                                未自动处理差异：{syncState.lastResult.conflicts.length} 项，
-                                最近一项为"{getConflictLabel(syncState.lastResult.conflicts[0].reason)}"
-                                ，路径 {syncState.lastResult.conflicts[0].path}
-                              </p>
-                            ) : null}
-                            {syncState.lastResult.skippedDeletionPaths.length > 0 ? (
-                              <p>删除差异待处理：{syncState.lastResult.skippedDeletionPaths.length} 项</p>
+
+                            {pendingItems.length > 0 ? (
+                              <div className="space-y-3 rounded-lg border bg-background/60 p-3">
+                                <div className="space-y-1">
+                                  <p className="font-medium text-foreground">待处理差异</p>
+                                  <p>
+                                    共 {pendingItems.length} 项，其中包含文件 {pendingSummary.fileCount} 项、
+                                    目录 {pendingSummary.directoryCount} 项。
+                                  </p>
+                                  <p>
+                                    按较新一端可直接判断 {pendingSummary.latestResolvableCount} 项，
+                                    仍有 {pendingSummary.latestUndeterminedCount} 项需要你明确选择本地或远端。
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    disabled={
+                                      !projectBound ||
+                                      !hasSavedSyncConfig ||
+                                      actionsDisabled ||
+                                      latestPreview.undeterminedCount === pendingItems.length
+                                    }
+                                    onClick={() => setResolveStrategy("latest")}
+                                    type="button"
+                                    variant="outline"
+                                  >
+                                    按较新一端覆盖
+                                  </Button>
+                                  <Button
+                                    disabled={!projectBound || !hasSavedSyncConfig || actionsDisabled}
+                                    onClick={() => setResolveStrategy("local")}
+                                    type="button"
+                                    variant="outline"
+                                  >
+                                    全部以本地为准
+                                  </Button>
+                                  <Button
+                                    disabled={!projectBound || !hasSavedSyncConfig || actionsDisabled}
+                                    onClick={() => setResolveStrategy("remote")}
+                                    type="button"
+                                    variant="outline"
+                                  >
+                                    全部以远端为准
+                                  </Button>
+                                </div>
+
+                                <div className="space-y-2">
+                                  {pendingItems.map((item) => (
+                                    <div
+                                      className="rounded-md border bg-muted/30 px-3 py-2"
+                                      key={`${item.entryType}:${item.path}`}
+                                    >
+                                      <p className="font-medium text-foreground">{item.path}</p>
+                                      <p>{getPendingTitle(item)}</p>
+                                      <p>{getLatestResolutionReasonLabel(item.latestResolutionReason)}</p>
+                                      <p>
+                                        本地时间：{formatTimestamp(item.localModifiedAt)}；远端时间：
+                                        {formatTimestamp(item.remoteModifiedAt)}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : syncState.lastResult.skippedDeletionPaths.length > 0 ? (
+                              <p>仍有删除差异待处理：{syncState.lastResult.skippedDeletionPaths.length} 项</p>
                             ) : null}
                           </div>
                         </AlertDescription>
@@ -499,21 +758,66 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
           <Separator />
 
-          <DialogFooter className="mx-0 mb-0 shrink-0 px-6 py-4">
-            <Button
-              disabled={actionsDisabled}
-              onClick={() => onOpenChange(false)}
-              type="button"
-              variant="outline"
-            >
-              关闭
-            </Button>
-            <Button disabled={actionsDisabled || !isDirty} type="submit">
-              保存设置
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            <DialogFooter className="mx-0 mb-0 shrink-0 px-6 py-4">
+              <Button
+                disabled={actionsDisabled}
+                onClick={() => onOpenChange(false)}
+                type="button"
+                variant="outline"
+              >
+                关闭
+              </Button>
+              <Button disabled={actionsDisabled || !isDirty} type="submit">
+                保存设置
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setResolveStrategy(null)
+          }
+        }}
+        open={resolveStrategy !== null}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {resolveStrategy ? getResolveStrategyTitle(resolveStrategy) : "批量处理差异"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <div className="space-y-2">
+                <p>
+                  {resolveStrategy
+                    ? getResolveStrategyDescription(resolveStrategy)
+                    : "会按你选择的策略处理当前待处理差异。"}
+                </p>
+                {currentResolvePreview ? (
+                  <div className="space-y-1">
+                    <p>创建文件：{currentResolvePreview.createFiles}</p>
+                    <p>覆盖文件：{currentResolvePreview.overwriteFiles}</p>
+                    <p>删除文件：{currentResolvePreview.deleteFiles}</p>
+                    <p>创建目录：{currentResolvePreview.createDirectories}</p>
+                    <p>删除目录：{currentResolvePreview.deleteDirectories}</p>
+                    {resolveStrategy === "latest" ? (
+                      <p>仍无法按较新判断：{currentResolvePreview.undeterminedCount}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actionsDisabled}>取消</AlertDialogCancel>
+            <AlertDialogAction disabled={actionsDisabled} onClick={() => void handleConfirmResolve()}>
+              确认处理
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

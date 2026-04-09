@@ -16,6 +16,7 @@ vi.mock("@/shared/tauri/commands", () => ({
   testSyncConnection: vi.fn(),
   syncPush: vi.fn(),
   syncPull: vi.fn(),
+  resolveSyncPending: vi.fn(),
 }));
 
 vi.mock("@/shared/tauri/dialog", () => ({
@@ -332,6 +333,7 @@ describe("WriterAppProvider", () => {
       changedDirectories: [],
       conflicts: [],
       skippedDeletionPaths: [],
+      pendingItems: [],
       syncedAt: 1,
     });
     listFilesMock.mockResolvedValue([{ name: "remote.md", path: "remote.md" }]);
@@ -378,6 +380,7 @@ describe("WriterAppProvider", () => {
       changedDirectories: [],
       conflicts: [],
       skippedDeletionPaths: [],
+      pendingItems: [],
       syncedAt: 100,
     });
 

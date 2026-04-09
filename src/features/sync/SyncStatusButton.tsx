@@ -25,7 +25,14 @@ function getSyncLabel({
 }: {
   isSettingsLoading: boolean
   isSyncing: boolean
-  activeDirection: "pull" | "push" | "test" | null
+  activeDirection:
+    | "pull"
+    | "push"
+    | "test"
+    | "resolveLatest"
+    | "resolveLocal"
+    | "resolveRemote"
+    | null
   settingsEnabled: boolean
   lastMessage: string | null
 }) {
@@ -43,6 +50,18 @@ function getSyncLabel({
 
   if (isSyncing && activeDirection === "test") {
     return "正在测试连接"
+  }
+
+  if (isSyncing && activeDirection === "resolveLatest") {
+    return "正在按较新处理"
+  }
+
+  if (isSyncing && activeDirection === "resolveLocal") {
+    return "正在以本地为准处理"
+  }
+
+  if (isSyncing && activeDirection === "resolveRemote") {
+    return "正在以远端为准处理"
   }
 
   if (!settingsEnabled) {
