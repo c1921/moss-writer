@@ -276,6 +276,48 @@ function PlaceholderPanel({ title }: { title: string }) {
   )
 }
 
+function ShortcutsPanel() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>托盘与快捷键</CardTitle>
+        <CardDescription>
+          当前版本的托盘行为和固定快捷键如下。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="rounded-lg border px-3 py-3">
+          <p className="text-sm font-medium">Ctrl + Backquote</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            系统级全局快捷键。窗口可见时隐藏到托盘，已在托盘时再次按下会恢复并聚焦主窗口。
+          </p>
+        </div>
+
+        <div className="rounded-lg border px-3 py-3">
+          <p className="text-sm font-medium">点击关闭按钮</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            不直接退出应用，而是隐藏到系统托盘。
+          </p>
+        </div>
+
+        <div className="rounded-lg border px-3 py-3">
+          <p className="text-sm font-medium">点击最小化按钮</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            保持普通最小化行为，不会隐藏到托盘。
+          </p>
+        </div>
+
+        <div className="rounded-lg border px-3 py-3">
+          <p className="text-sm font-medium">托盘图标左键</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            恢复并聚焦主窗口。托盘菜单同时提供“显示主窗口”和“退出”。
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppearance }: SettingsDialogProps) {
   const projectState = useWriterProjectState()
   const syncState = useWriterSyncState()
@@ -486,7 +528,7 @@ export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppeara
                   </TabsContent>
 
                   <TabsContent value="shortcuts">
-                    <PlaceholderPanel title="快捷键" />
+                    <ShortcutsPanel />
                   </TabsContent>
 
                   <TabsContent className="space-y-4" value="webdav">

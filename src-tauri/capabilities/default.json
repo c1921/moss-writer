@@ -6,6 +6,10 @@
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
     "core:window:allow-set-decorations",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-skip-taskbar",
@@ -16,6 +20,9 @@
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
     "core:window:allow-start-dragging",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
     "dialog:default",
     "opener:default"
   ]

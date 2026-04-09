@@ -120,4 +120,18 @@ describe("SettingsDialog", () => {
 
     await waitFor(() => expect(resolveSyncPendingMock).toHaveBeenCalledWith("remote"))
   })
+
+  it("展示托盘与最小化到托盘的快捷键说明", async () => {
+    const user = userEvent.setup()
+
+    render(<SettingsDialog appearance={defaultAppearance} onChangeAppearance={vi.fn()} onOpenChange={onOpenChangeMock} open />)
+
+    await user.click(screen.getByRole("tab", { name: "快捷键" }))
+
+    expect(screen.getByText("托盘与快捷键")).not.toBeNull()
+    expect(screen.getByText("Ctrl + Backquote")).not.toBeNull()
+    expect(screen.getByText("系统级全局快捷键。窗口可见时隐藏到托盘，已在托盘时再次按下会恢复并聚焦主窗口。")).not.toBeNull()
+    expect(screen.getByText("保持普通最小化行为，不会隐藏到托盘。")).not.toBeNull()
+    expect(screen.getByText("恢复并聚焦主窗口。托盘菜单同时提供“显示主窗口”和“退出”。")).not.toBeNull()
+  })
 })
