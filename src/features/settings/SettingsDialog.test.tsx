@@ -13,6 +13,14 @@ vi.mock("@/app/WriterAppContext", () => ({
 }))
 
 import { SettingsDialog } from "@/features/settings/SettingsDialog"
+import type { AppearanceSettings } from "@/app/appearanceSettings"
+
+const defaultAppearance: AppearanceSettings = {
+  mainEditorFontSize: 16,
+  miniEditorFontSize: 15,
+  miniWindowOpacity: 78,
+  miniWindowShowStatusBar: true,
+}
 
 describe("SettingsDialog", () => {
   const onOpenChangeMock = vi.fn()
@@ -89,7 +97,7 @@ describe("SettingsDialog", () => {
   it("展示准确待处理差异文案，并支持批量以远端为准处理", async () => {
     const user = userEvent.setup()
 
-    render(<SettingsDialog onOpenChange={onOpenChangeMock} open />)
+    render(<SettingsDialog appearance={defaultAppearance} onChangeAppearance={vi.fn()} onOpenChange={onOpenChangeMock} open />)
 
     await user.click(screen.getByRole("tab", { name: "WebDAV" }))
 

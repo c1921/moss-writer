@@ -14,6 +14,7 @@ type EditorPaneVariant = "standard" | "mini";
 
 interface EditorPaneProps {
   variant?: EditorPaneVariant;
+  fontSizePx?: number;
 }
 
 function renderEmptyState(
@@ -42,6 +43,7 @@ function renderMiniPane(
   placeholder: string,
   value: string,
   disabled: boolean,
+  fontSizePx?: number,
 ) {
   return (
     <section className="flex h-full flex-1 flex-col">
@@ -49,12 +51,13 @@ function renderMiniPane(
         <Textarea
           aria-label="小说正文编辑区"
           className={cn(
-            "flex-1 resize-none border-0 bg-transparent px-1 py-0 text-[15px] leading-7 shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-base field-sizing-fixed overflow-y-auto",
+            "flex-1 resize-none border-0 bg-transparent px-1 py-0 leading-7 shadow-none focus-visible:border-transparent focus-visible:ring-0 field-sizing-fixed overflow-y-auto",
             disabled && "text-muted-foreground",
           )}
           disabled={disabled}
           placeholder={placeholder}
           spellCheck={false}
+          style={{ fontSize: `${fontSizePx ?? 15}px` }}
           value={value}
         />
       </div>
@@ -62,7 +65,7 @@ function renderMiniPane(
   );
 }
 
-export function EditorPane({ variant = "standard" }: EditorPaneProps) {
+export function EditorPane({ variant = "standard", fontSizePx }: EditorPaneProps) {
   const projectState = useWriterProjectState();
   const editorState = useWriterEditorState();
   const { updateEditorContent } = useWriterAppActions();
@@ -70,7 +73,7 @@ export function EditorPane({ variant = "standard" }: EditorPaneProps) {
 
   if (!projectState.projectPath) {
     if (isMini) {
-      return renderMiniPane("先在正常模式打开一个项目", "", true);
+      return renderMiniPane("先在正常模式打开一个项目", "", true, fontSizePx);
     }
 
     return renderEmptyState(
@@ -83,7 +86,7 @@ export function EditorPane({ variant = "standard" }: EditorPaneProps) {
 
   if (!editorState.currentFilePath) {
     if (isMini) {
-      return renderMiniPane("先在正常模式选择一个章节", "", true);
+      return renderMiniPane("先在正常模式选择一个章节", "", true, fontSizePx);
     }
 
     return renderEmptyState(
@@ -100,11 +103,12 @@ export function EditorPane({ variant = "standard" }: EditorPaneProps) {
         <div className="flex flex-1 flex-col px-3 pb-3">
           <Textarea
             aria-label="小说正文编辑区"
-            className="flex-1 resize-none border-0 bg-transparent px-1 py-0 text-[15px] leading-7 shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-base field-sizing-fixed overflow-y-auto"
+            className="flex-1 resize-none border-0 bg-transparent px-1 py-0 leading-7 shadow-none focus-visible:border-transparent focus-visible:ring-0 field-sizing-fixed overflow-y-auto"
             disabled={editorState.isFileLoading}
             onChange={(event) => updateEditorContent(event.currentTarget.value)}
             placeholder="开始写作..."
             spellCheck={false}
+            style={{ fontSize: `${fontSizePx ?? 15}px` }}
             value={editorState.editorContent}
           />
         </div>
@@ -117,11 +121,12 @@ export function EditorPane({ variant = "standard" }: EditorPaneProps) {
       <div className="flex flex-1 flex-col px-6 py-4">
         <Textarea
           aria-label="小说正文编辑区"
-          className="flex-1 resize-none border-0 px-1 py-0 text-base leading-8 shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-lg"
+          className="flex-1 resize-none border-0 px-1 py-0 leading-8 shadow-none focus-visible:border-transparent focus-visible:ring-0"
           disabled={editorState.isFileLoading}
           onChange={(event) => updateEditorContent(event.currentTarget.value)}
           placeholder="开始写作..."
           spellCheck={false}
+          style={{ fontSize: `${fontSizePx ?? 16}px` }}
           value={editorState.editorContent}
         />
       </div>

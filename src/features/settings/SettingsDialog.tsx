@@ -44,6 +44,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { AppearanceSettings } from "@/app/appearanceSettings"
+import { AppearancePanel } from "@/features/settings/AppearancePanel"
 import type { WebDavSettings } from "@/features/settings/types"
 import type {
   SyncLatestResolutionReason,
@@ -55,6 +57,8 @@ import { getBaseName } from "@/shared/utils/fileNames"
 interface SettingsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  appearance: AppearanceSettings
+  onChangeAppearance: (s: AppearanceSettings) => void
 }
 
 function toMessage(error: unknown) {
@@ -272,7 +276,7 @@ function PlaceholderPanel({ title }: { title: string }) {
   )
 }
 
-export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppearance }: SettingsDialogProps) {
   const projectState = useWriterProjectState()
   const syncState = useWriterSyncState()
   const syncActions = useWriterSyncActions()
@@ -471,7 +475,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </TabsContent>
 
                   <TabsContent value="appearance">
-                    <PlaceholderPanel title="外观" />
+                    <AppearancePanel
+                      onChangeSettings={onChangeAppearance}
+                      settings={appearance}
+                    />
                   </TabsContent>
 
                   <TabsContent value="git">

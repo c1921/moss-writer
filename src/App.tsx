@@ -7,6 +7,8 @@ import {
   useWriterAppError,
 } from "@/app/WriterAppContext";
 import { useMiniWindowMode } from "@/app/hooks/useMiniWindowMode";
+import { useAppearanceSettings } from "@/app/hooks/useAppearanceSettings";
+import type { AppearanceSettings } from "@/app/appearanceSettings";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -30,6 +32,7 @@ interface StandardWorkspaceProps {
   clearError: () => void;
   onEnterMiniWindowMode: () => void;
   onOpenSettings: () => void;
+  mainEditorFontSizePx: number;
 }
 
 function StandardWorkspace({
@@ -37,6 +40,7 @@ function StandardWorkspace({
   clearError,
   onEnterMiniWindowMode,
   onOpenSettings,
+  mainEditorFontSizePx,
 }: StandardWorkspaceProps) {
   return (
     <div className="min-h-svh bg-background">
@@ -72,7 +76,7 @@ function StandardWorkspace({
               </Alert>
             </div>
           ) : null}
-          <EditorPane />
+          <EditorPane fontSizePx={mainEditorFontSizePx} />
         </SidebarInset>
       </SidebarProvider>
     </div>
@@ -83,12 +87,14 @@ interface MiniWindowWorkspaceProps {
   onExitMiniWindowMode: () => void;
   onOpenSettings: () => void;
   onStartDragging: () => void;
+  appearance: AppearanceSettings;
 }
 
 function MiniWindowWorkspace({
   onExitMiniWindowMode,
   onOpenSettings,
   onStartDragging,
+  appearance,
 }: MiniWindowWorkspaceProps) {
   function handleDragStart(event: MouseEvent<HTMLDivElement>) {
     if (event.button !== 0) {
@@ -104,19 +110,28 @@ function MiniWindowWorkspace({
 
   return (
     <div className="h-svh bg-transparent" data-testid="mini-window-workspace">
-      <section className="flex h-full flex-col overflow-hidden bg-background/78 backdrop-blur-2xl">
-        <header className="flex items-center gap-2 border-b border-border/40 px-3 py-2">
-          <div
-            className="flex min-w-0 flex-1 items-center gap-2 px-1"
-            data-testid="mini-window-drag-bar"
-            onMouseDown={handleDragStart}
-          >
-            <SyncStatusButton compact onClick={onOpenSettings} />
-            <EditorSaveStatusBadge
-              className="shrink-0"
-              compact
-              showUnavailable
-            />
+      <section
+        className="flex h-full flex-col overflow-hidden backdrop-blur-2xl"
+        style={{
+          backgroundColor: `color-mix(in oklch, var(--color-background) ${appearance.miniWindowOpacity}%, transparent)`,
+        }}
+      >
+        <header
+          className="flex min-h-9 items-center gap-2 border-b border-border/40 px-3 py-2"
+          data-testid="mini-window-drag-bar"
+          onMouseDown={handleDragStart}
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
+            {appearance.miniWindowShowStatusBar && (
+              <>
+                <SyncStatusButton compact onClick={onOpenSettings} />
+                <EditorSaveStatusBadge
+                  className="shrink-0"
+                  compact
+                  showUnavailable
+                />
+              </>
+            )}
           </div>
           <Button
             aria-label="退出小窗模式"
@@ -130,7 +145,7 @@ function MiniWindowWorkspace({
           </Button>
         </header>
         <div className="flex flex-1 pt-2">
-          <EditorPane variant="mini" />
+          <EditorPane fontSizePx={appearance.miniEditorFontSize} variant="mini" />
         </div>
       </section>
     </div>
@@ -147,6 +162,7 @@ function AppShell() {
     exitMiniWindowMode,
     startWindowDragging,
   } = useMiniWindowMode();
+  const { settings: appearance, updateSettings: updateAppearance } = useAppearanceSettings();
 
   async function handleEnterMiniWindowMode() {
     setSettingsOpen(false);
@@ -165,6 +181,7 @@ function AppShell() {
     <>
       {isMiniWindowMode ? (
         <MiniWindowWorkspace
+          appearance={appearance}
           onExitMiniWindowMode={() => void exitMiniWindowMode()}
           onOpenSettings={() => void handleOpenSettings()}
           onStartDragging={() => void startWindowDragging()}
@@ -173,11 +190,17 @@ function AppShell() {
         <StandardWorkspace
           appError={appError}
           clearError={clearError}
+          mainEditorFontSizePx={appearance.mainEditorFontSize}
           onEnterMiniWindowMode={() => void handleEnterMiniWindowMode()}
           onOpenSettings={() => setSettingsOpen(true)}
         />
       )}
-      <SettingsDialog onOpenChange={setSettingsOpen} open={settingsOpen} />
+      <SettingsDialog
+        appearance={appearance}
+        onChangeAppearance={updateAppearance}
+        onOpenChange={setSettingsOpen}
+        open={settingsOpen}
+      />
     </>
   );
 }
