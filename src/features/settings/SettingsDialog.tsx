@@ -5,6 +5,7 @@ import {
   RefreshCcw,
   ShieldCheck,
 } from "lucide-react"
+import { getVersion } from "@tauri-apps/api/app"
 
 import {
   useWriterProjectState,
@@ -318,6 +319,33 @@ function ShortcutsPanel() {
   )
 }
 
+function AboutPanel({
+  version,
+  versionLoading,
+}: {
+  version: string | null
+  versionLoading: boolean
+}) {
+  const versionLabel = versionLoading ? "读取中" : version ?? "未知"
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>关于 Moss Writer</CardTitle>
+        <CardDescription>
+          当前应用版本来自本次打包写入的版本元数据。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="rounded-lg border px-3 py-3">
+          <p className="text-sm text-muted-foreground">应用版本</p>
+          <p className="mt-1 font-mono text-base font-medium">{versionLabel}</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppearance }: SettingsDialogProps) {
   const projectState = useWriterProjectState()
   const syncState = useWriterSyncState()
@@ -327,6 +355,8 @@ export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppeara
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("general")
   const [resolveStrategy, setResolveStrategy] = useState<SyncResolveStrategy | null>(null)
+  const [appVersion, setAppVersion] = useState<string | null>(null)
+  const [isVersionLoading, setIsVersionLoading] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -336,6 +366,37 @@ export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppeara
       setResolveStrategy(null)
     }
   }, [open, syncState.settings])
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    let cancelled = false
+    setIsVersionLoading(true)
+    setAppVersion(null)
+
+    void getVersion()
+      .then((version) => {
+        if (!cancelled) {
+          setAppVersion(version)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAppVersion(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsVersionLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   const isDirty = useMemo(
     () => !isSameSettings(form, syncState.settings),
@@ -497,6 +558,9 @@ export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppeara
               <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="shortcuts">
                 快捷键
               </TabsTrigger>
+              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="about">
+                关于
+              </TabsTrigger>
               <Separator className="my-1" />
               <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="webdav">
                 WebDAV
@@ -529,6 +593,10 @@ export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppeara
 
                   <TabsContent value="shortcuts">
                     <ShortcutsPanel />
+                  </TabsContent>
+
+                  <TabsContent value="about">
+                    <AboutPanel version={appVersion} versionLoading={isVersionLoading} />
                   </TabsContent>
 
                   <TabsContent className="space-y-4" value="webdav">

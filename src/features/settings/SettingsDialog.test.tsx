@@ -5,11 +5,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const useWriterProjectStateMock = vi.fn()
 const useWriterSyncActionsMock = vi.fn()
 const useWriterSyncStateMock = vi.fn()
+const getVersionMock = vi.fn()
 
 vi.mock("@/app/WriterAppContext", () => ({
   useWriterProjectState: () => useWriterProjectStateMock(),
   useWriterSyncActions: () => useWriterSyncActionsMock(),
   useWriterSyncState: () => useWriterSyncStateMock(),
+}))
+
+vi.mock("@tauri-apps/api/app", () => ({
+  getVersion: () => getVersionMock(),
 }))
 
 import { SettingsDialog } from "@/features/settings/SettingsDialog"
@@ -28,6 +33,7 @@ describe("SettingsDialog", () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    getVersionMock.mockResolvedValue("1.2.3")
     useWriterProjectStateMock.mockReturnValue({
       projectPath: "/project",
       files: [],
@@ -133,5 +139,27 @@ describe("SettingsDialog", () => {
     expect(screen.getByText("系统级全局快捷键。窗口可见时隐藏到托盘，已在托盘时再次按下会恢复并聚焦主窗口。")).not.toBeNull()
     expect(screen.getByText("保持普通最小化行为，不会隐藏到托盘。")).not.toBeNull()
     expect(screen.getByText("恢复并聚焦主窗口。托盘菜单同时提供“显示主窗口”和“退出”。")).not.toBeNull()
+  })
+
+  it("展示关于页中的应用版本号", async () => {
+    const user = userEvent.setup()
+
+    render(<SettingsDialog appearance={defaultAppearance} onChangeAppearance={vi.fn()} onOpenChange={onOpenChangeMock} open />)
+
+    await user.click(screen.getByRole("tab", { name: "关于" }))
+
+    await waitFor(() => expect(screen.getByText("1.2.3")).not.toBeNull())
+    expect(screen.getByText("关于 Moss Writer")).not.toBeNull()
+  })
+
+  it("版本读取失败时展示未知状态", async () => {
+    const user = userEvent.setup()
+    getVersionMock.mockRejectedValueOnce(new Error("boom"))
+
+    render(<SettingsDialog appearance={defaultAppearance} onChangeAppearance={vi.fn()} onOpenChange={onOpenChangeMock} open />)
+
+    await user.click(screen.getByRole("tab", { name: "关于" }))
+
+    await waitFor(() => expect(screen.getByText("未知")).not.toBeNull())
   })
 })
