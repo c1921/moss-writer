@@ -121,7 +121,7 @@ export function EditorPane({ variant = "standard", fontSizePx }: EditorPaneProps
       <div className="flex flex-1 flex-col px-6 py-4">
         <Textarea
           aria-label="小说正文编辑区"
-          className="flex-1 resize-none border-0 px-1 py-0 shadow-none focus-visible:border-transparent focus-visible:ring-0"
+          className="flex-1 resize-none border-0 px-1 py-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 field-sizing-fixed overflow-y-auto"
           disabled={editorState.isFileLoading}
           onChange={(event) => updateEditorContent(event.currentTarget.value)}
           placeholder="开始写作..."

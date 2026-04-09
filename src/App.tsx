@@ -43,7 +43,7 @@ function StandardWorkspace({
   mainEditorFontSizePx,
 }: StandardWorkspaceProps) {
   return (
-    <div className="min-h-svh overflow-hidden bg-background">
+    <div className="h-svh bg-background">
       <SidebarProvider>
         <FileSidebar onOpenSettings={onOpenSettings} />
         <SidebarInset>
