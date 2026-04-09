@@ -49,7 +49,7 @@ function renderMiniPane(
         <Textarea
           aria-label="小说正文编辑区"
           className={cn(
-            "flex-1 resize-none border-0 bg-transparent px-1 py-0 text-[15px] leading-7 shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-base",
+            "flex-1 resize-none border-0 bg-transparent px-1 py-0 text-[15px] leading-7 shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-base field-sizing-fixed overflow-y-auto",
             disabled && "text-muted-foreground",
           )}
           disabled={disabled}
@@ -100,7 +100,7 @@ export function EditorPane({ variant = "standard" }: EditorPaneProps) {
         <div className="flex flex-1 flex-col px-3 pb-3">
           <Textarea
             aria-label="小说正文编辑区"
-            className="flex-1 resize-none border-0 bg-transparent px-1 py-0 text-[15px] leading-7 shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-base"
+            className="flex-1 resize-none border-0 bg-transparent px-1 py-0 text-[15px] leading-7 shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-base field-sizing-fixed overflow-y-auto"
             disabled={editorState.isFileLoading}
             onChange={(event) => updateEditorContent(event.currentTarget.value)}
             placeholder="开始写作..."

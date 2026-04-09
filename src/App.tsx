@@ -103,11 +103,11 @@ function MiniWindowWorkspace({
   }
 
   return (
-    <div className="min-h-svh bg-transparent p-3" data-testid="mini-window-workspace">
-      <section className="flex min-h-[calc(100svh-1.5rem)] flex-col overflow-hidden rounded-[28px] border border-border/40 bg-background/78 shadow-[0_24px_80px_-28px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
+    <div className="h-svh bg-transparent" data-testid="mini-window-workspace">
+      <section className="flex h-full flex-col overflow-hidden bg-background/78 backdrop-blur-2xl">
         <header className="flex items-center gap-2 border-b border-border/40 px-3 py-2">
           <div
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-border/40 bg-background/35 px-2 py-1.5"
+            className="flex min-w-0 flex-1 items-center gap-2 px-1"
             data-testid="mini-window-drag-bar"
             onMouseDown={handleDragStart}
           >
