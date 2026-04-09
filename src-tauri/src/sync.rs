@@ -5,6 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use percent_encoding::percent_decode_str;
 use reqwest::{
     blocking::Client,
     header::{HeaderMap, HeaderValue, CONTENT_TYPE},
@@ -105,6 +106,7 @@ struct LocalSnapshot {
 
 #[derive(Debug, Clone)]
 struct RemoteFileEntry {
+    file_url: Url,
     revision: RemoteRevision,
 }
 
@@ -181,68 +183,7 @@ impl WebDavClient {
         let body = response
             .text()
             .map_err(|error| format!("读取 WebDAV 响应失败：{error}"))?;
-        let document =
-            Document::parse(&body).map_err(|error| format!("解析 WebDAV 响应失败：{error}"))?;
-        let root_segments = collect_url_segments(project_url);
-        let mut snapshot = RemoteSnapshot {
-            root_exists: true,
-            ..RemoteSnapshot::default()
-        };
-
-        for response_node in document
-            .descendants()
-            .filter(|node| node.is_element() && node.tag_name().name() == "response")
-        {
-            let Some(href) = find_child_text(response_node, "href") else {
-                continue;
-            };
-
-            let resolved_url = project_url
-                .join(href.trim())
-                .map_err(|error| format!("WebDAV 返回了无法识别的路径：{error}"))?;
-            let response_segments = collect_url_segments(&resolved_url);
-
-            if response_segments.len() < root_segments.len()
-                || !response_segments
-                    .iter()
-                    .zip(root_segments.iter())
-                    .all(|(left, right)| left == right)
-            {
-                continue;
-            }
-
-            let relative_segments = response_segments[root_segments.len()..].to_vec();
-            if relative_segments.is_empty() {
-                continue;
-            }
-            if relative_segments
-                .iter()
-                .any(|segment| segment == "." || segment == "..")
-            {
-                return Err("WebDAV 返回了非法路径".to_string());
-            }
-
-            let relative_path = relative_segments.join("/");
-            let is_directory = response_node
-                .descendants()
-                .any(|node| node.is_element() && node.tag_name().name() == "collection");
-
-            if is_directory {
-                snapshot.directories.insert(relative_path);
-                continue;
-            }
-
-            let revision = RemoteRevision {
-                etag: find_descendant_text(response_node, "getetag"),
-                last_modified: find_descendant_text(response_node, "getlastmodified"),
-                size: find_descendant_text(response_node, "getcontentlength")
-                    .and_then(|value| value.parse::<u64>().ok()),
-            };
-
-            snapshot.files.insert(relative_path, RemoteFileEntry { revision });
-        }
-
-        Ok(snapshot)
+        parse_remote_tree_response(&body, project_url)
     }
 
     fn get_file(&self, file_url: &Url) -> SyncResult<Vec<u8>> {
@@ -415,10 +356,10 @@ fn execute_sync<R: Runtime>(
 
         match direction {
             SyncDirection::Pull => match (base, local, remote) {
-                (None, None, Some(_)) => {
+                (None, None, Some(remote)) => {
                     download_remote_file(
                         &client,
-                        &project_url,
+                        remote,
                         &project_root,
                         &path,
                         &mut changed_paths,
@@ -429,13 +370,9 @@ fn execute_sync<R: Runtime>(
                     path: path.clone(),
                     reason: "localOnlyChange".to_string(),
                 }),
-                (None, Some(local), Some(_)) => {
-                    let remote_hash = fetch_remote_file_hash(
-                        &client,
-                        &project_url,
-                        &path,
-                        &mut remote_hash_cache,
-                    )?;
+                (None, Some(local), Some(remote)) => {
+                    let remote_hash =
+                        fetch_remote_file_hash(&client, remote, &path, &mut remote_hash_cache)?;
                     if remote_hash == local.content_hash {
                         resolved_file_paths.insert(path.clone());
                     } else {
@@ -446,10 +383,10 @@ fn execute_sync<R: Runtime>(
                     }
                 }
                 (Some(_), Some(_), Some(_)) if !local_changed && !remote_changed => {}
-                (Some(_), Some(_), Some(_)) if !local_changed && remote_changed => {
+                (Some(_), Some(_), Some(remote)) if !local_changed && remote_changed => {
                     download_remote_file(
                         &client,
-                        &project_url,
+                        remote,
                         &project_root,
                         &path,
                         &mut changed_paths,
@@ -462,13 +399,9 @@ fn execute_sync<R: Runtime>(
                         reason: "localOnlyChange".to_string(),
                     });
                 }
-                (Some(_), Some(local), Some(_)) => {
-                    let remote_hash = fetch_remote_file_hash(
-                        &client,
-                        &project_url,
-                        &path,
-                        &mut remote_hash_cache,
-                    )?;
+                (Some(_), Some(local), Some(remote)) => {
+                    let remote_hash =
+                        fetch_remote_file_hash(&client, remote, &path, &mut remote_hash_cache)?;
                     if remote_hash == local.content_hash {
                         resolved_file_paths.insert(path.clone());
                     } else {
@@ -513,13 +446,9 @@ fn execute_sync<R: Runtime>(
                     path: path.clone(),
                     reason: "remoteOnlyChange".to_string(),
                 }),
-                (None, Some(local), Some(_)) => {
-                    let remote_hash = fetch_remote_file_hash(
-                        &client,
-                        &project_url,
-                        &path,
-                        &mut remote_hash_cache,
-                    )?;
+                (None, Some(local), Some(remote)) => {
+                    let remote_hash =
+                        fetch_remote_file_hash(&client, remote, &path, &mut remote_hash_cache)?;
                     if remote_hash == local.content_hash {
                         resolved_file_paths.insert(path.clone());
                     } else {
@@ -547,13 +476,9 @@ fn execute_sync<R: Runtime>(
                         reason: "remoteOnlyChange".to_string(),
                     });
                 }
-                (Some(_), Some(local), Some(_)) => {
-                    let remote_hash = fetch_remote_file_hash(
-                        &client,
-                        &project_url,
-                        &path,
-                        &mut remote_hash_cache,
-                    )?;
+                (Some(_), Some(local), Some(remote)) => {
+                    let remote_hash =
+                        fetch_remote_file_hash(&client, remote, &path, &mut remote_hash_cache)?;
                     if remote_hash == local.content_hash {
                         resolved_file_paths.insert(path.clone());
                     } else {
@@ -634,12 +559,14 @@ fn execute_sync<R: Runtime>(
     }
 
     let final_local_snapshot = scan_local_snapshot(&project_root)?;
-    let final_remote_snapshot =
-        if matches!(direction, SyncDirection::Push) || !changed_paths.is_empty() || !changed_directories.is_empty() {
-            client.list_tree(&project_url)?
-        } else {
-            remote_snapshot
-        };
+    let final_remote_snapshot = if matches!(direction, SyncDirection::Push)
+        || !changed_paths.is_empty()
+        || !changed_directories.is_empty()
+    {
+        client.list_tree(&project_url)?
+    } else {
+        remote_snapshot
+    };
 
     for path in removed_file_paths {
         baseline.files.remove(&path);
@@ -710,7 +637,10 @@ fn execute_sync<R: Runtime>(
     })
 }
 
-fn sanitize_sync_settings(settings: SyncSettings, require_enabled: bool) -> SyncResult<SyncSettings> {
+fn sanitize_sync_settings(
+    settings: SyncSettings,
+    require_enabled: bool,
+) -> SyncResult<SyncSettings> {
     let mut sanitized = settings;
     sanitized.root_url = sanitized.root_url.trim().to_string();
     sanitized.username = sanitized.username.trim().to_string();
@@ -738,8 +668,7 @@ fn sanitize_sync_settings(settings: SyncSettings, require_enabled: bool) -> Sync
 }
 
 fn parse_root_url(root_url: &str) -> SyncResult<Url> {
-    let parsed =
-        Url::parse(root_url).map_err(|error| format!("WebDAV 地址格式不正确：{error}"))?;
+    let parsed = Url::parse(root_url).map_err(|error| format!("WebDAV 地址格式不正确：{error}"))?;
 
     match parsed.scheme() {
         "http" | "https" => Ok(parsed),
@@ -818,7 +747,10 @@ fn load_sync_settings_from_dir(config_dir: &Path) -> SyncResult<SyncSettings> {
     sanitize_sync_settings(settings, false)
 }
 
-fn save_sync_settings_to_dir(config_dir: &Path, settings: SyncSettings) -> SyncResult<SyncSettings> {
+fn save_sync_settings_to_dir(
+    config_dir: &Path,
+    settings: SyncSettings,
+) -> SyncResult<SyncSettings> {
     let sanitized = sanitize_sync_settings(settings, false)?;
     let raw = serde_json::to_string_pretty(&sanitized)
         .map_err(|error| format!("序列化同步设置失败：{error}"))?;
@@ -834,8 +766,7 @@ fn load_baseline(base_dir: &Path, project_root: &Path) -> SyncResult<SyncBaselin
     }
 
     let raw = fs::read_to_string(&path).map_err(|error| format!("读取同步基线失败：{error}"))?;
-    serde_json::from_str::<SyncBaseline>(&raw)
-        .map_err(|error| format!("解析同步基线失败：{error}"))
+    serde_json::from_str::<SyncBaseline>(&raw).map_err(|error| format!("解析同步基线失败：{error}"))
 }
 
 fn save_baseline(base_dir: &Path, project_root: &Path, baseline: &SyncBaseline) -> SyncResult<()> {
@@ -939,6 +870,105 @@ fn collect_url_segments(url: &Url) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn collection_base_url(url: &Url) -> SyncResult<Url> {
+    if url.as_str().ends_with('/') {
+        return Ok(url.clone());
+    }
+
+    Url::parse(&format!("{}/", url.as_str()))
+        .map_err(|error| format!("WebDAV 地址格式不正确：{error}"))
+}
+
+fn resolve_webdav_href(project_url: &Url, href: &str) -> SyncResult<Url> {
+    let trimmed = href.trim();
+    if trimmed.is_empty() {
+        return Err("WebDAV 返回了空路径".to_string());
+    }
+
+    collection_base_url(project_url)?
+        .join(trimmed)
+        .map_err(|error| format!("WebDAV 返回了无法识别的路径：{error}"))
+}
+
+fn decode_url_segment(segment: &str) -> SyncResult<String> {
+    percent_decode_str(segment)
+        .decode_utf8()
+        .map(|value| value.into_owned())
+        .map_err(|error| format!("WebDAV 返回了无法解码的路径：{error}"))
+}
+
+fn parse_remote_tree_response(body: &str, project_url: &Url) -> SyncResult<RemoteSnapshot> {
+    let document =
+        Document::parse(body).map_err(|error| format!("解析 WebDAV 响应失败：{error}"))?;
+    let root_segments = collect_url_segments(project_url);
+    let mut snapshot = RemoteSnapshot {
+        root_exists: true,
+        ..RemoteSnapshot::default()
+    };
+
+    for response_node in document
+        .descendants()
+        .filter(|node| node.is_element() && node.tag_name().name() == "response")
+    {
+        let Some(href) = find_child_text(response_node, "href") else {
+            continue;
+        };
+
+        let resolved_url = resolve_webdav_href(project_url, &href)?;
+        let response_segments = collect_url_segments(&resolved_url);
+
+        if response_segments.len() < root_segments.len()
+            || !response_segments
+                .iter()
+                .zip(root_segments.iter())
+                .all(|(left, right)| left == right)
+        {
+            continue;
+        }
+
+        let relative_segments = response_segments[root_segments.len()..]
+            .iter()
+            .map(|segment| decode_url_segment(segment))
+            .collect::<SyncResult<Vec<_>>>()?;
+        if relative_segments.is_empty() {
+            continue;
+        }
+        if relative_segments
+            .iter()
+            .any(|segment| segment == "." || segment == "..")
+        {
+            return Err("WebDAV 返回了非法路径".to_string());
+        }
+
+        let relative_path = relative_segments.join("/");
+        let is_directory = response_node
+            .descendants()
+            .any(|node| node.is_element() && node.tag_name().name() == "collection");
+
+        if is_directory {
+            snapshot.directories.insert(relative_path);
+            continue;
+        }
+
+        let revision = RemoteRevision {
+            etag: find_descendant_text(response_node, "getetag"),
+            last_modified: find_descendant_text(response_node, "getlastmodified"),
+            size: find_descendant_text(response_node, "getcontentlength")
+                .and_then(|value| value.parse::<u64>().ok()),
+        };
+
+        snapshot.files.insert(
+            relative_path,
+            RemoteFileEntry {
+                file_url: resolved_url,
+                revision,
+            },
+        );
+    }
+
+    Ok(snapshot)
+}
+
 fn ensure_remote_project_root(client: &WebDavClient, project_root: &Path) -> SyncResult<()> {
     let project_name = project_root
         .file_name()
@@ -960,7 +990,10 @@ fn ensure_remote_directory(
     existing_directories: &mut BTreeSet<String>,
 ) -> SyncResult<()> {
     let mut path_accumulator = Vec::new();
-    for segment in relative_directory.split('/').filter(|segment| !segment.is_empty()) {
+    for segment in relative_directory
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+    {
         path_accumulator.push(segment);
         let joined = path_accumulator.join("/");
         if existing_directories.contains(&joined) {
@@ -994,12 +1027,14 @@ fn upload_local_file(
 
 fn download_remote_file(
     client: &WebDavClient,
-    project_url: &Url,
+    remote: &RemoteFileEntry,
     project_root: &Path,
     relative_path: &str,
     changed_paths: &mut BTreeSet<String>,
 ) -> SyncResult<()> {
-    let bytes = client.get_file(&join_relative_path(project_url, relative_path)?)?;
+    let bytes = client
+        .get_file(&remote.file_url)
+        .map_err(|error| format!("{error}，路径 {relative_path}"))?;
     let target_path = project_root.join(Path::new(relative_path));
 
     if let Some(parent) = target_path.parent() {
@@ -1022,7 +1057,10 @@ fn join_relative_path(project_url: &Url, relative_path: &str) -> SyncResult<Url>
         .path_segments_mut()
         .map_err(|_| "WebDAV 地址不支持路径拼接".to_string())?;
 
-    for segment in relative_path.split('/').filter(|segment| !segment.is_empty()) {
+    for segment in relative_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+    {
         if segment == "." || segment == ".." {
             return Err("同步路径不合法".to_string());
         }
@@ -1047,7 +1085,7 @@ fn parent_directory(path: &str) -> Option<String> {
 
 fn fetch_remote_file_hash(
     client: &WebDavClient,
-    project_url: &Url,
+    remote: &RemoteFileEntry,
     relative_path: &str,
     cache: &mut BTreeMap<String, String>,
 ) -> SyncResult<String> {
@@ -1055,7 +1093,11 @@ fn fetch_remote_file_hash(
         return Ok(hash.clone());
     }
 
-    let hash = hash_bytes(&client.get_file(&join_relative_path(project_url, relative_path)?)?);
+    let hash = hash_bytes(
+        &client
+            .get_file(&remote.file_url)
+            .map_err(|error| format!("{error}，路径 {relative_path}"))?,
+    );
     cache.insert(relative_path.to_string(), hash.clone());
     Ok(hash)
 }
@@ -1079,18 +1121,18 @@ fn find_descendant_text<'a, 'input>(
         .filter(|value| !value.is_empty())
 }
 
-fn collect_union_keys<'a, I1, I2, I3>(
-    first: I1,
-    second: I2,
-    third: I3,
-) -> BTreeSet<String>
+fn collect_union_keys<'a, I1, I2, I3>(first: I1, second: I2, third: I3) -> BTreeSet<String>
 where
     I1: IntoIterator<Item = &'a String>,
     I2: IntoIterator<Item = &'a String>,
     I3: IntoIterator<Item = &'a String>,
 {
     let mut keys = BTreeSet::new();
-    for collection in [first.into_iter().collect::<Vec<_>>(), second.into_iter().collect::<Vec<_>>(), third.into_iter().collect::<Vec<_>>()] {
+    for collection in [
+        first.into_iter().collect::<Vec<_>>(),
+        second.into_iter().collect::<Vec<_>>(),
+        third.into_iter().collect::<Vec<_>>(),
+    ] {
         for key in collection {
             keys.insert(key.clone());
         }
@@ -1183,7 +1225,80 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(url.as_str(), "https://dav.example.com/root/MossWriter/project-a");
+        assert_eq!(
+            url.as_str(),
+            "https://dav.example.com/root/MossWriter/project-a"
+        );
+    }
+
+    #[test]
+    fn resolve_webdav_href_uses_project_collection_for_relative_paths() {
+        let project_url = Url::parse("https://dav.example.com/root/MossWriter/project-a").unwrap();
+
+        let resolved = resolve_webdav_href(&project_url, "chapter.md").unwrap();
+
+        assert_eq!(
+            resolved.as_str(),
+            "https://dav.example.com/root/MossWriter/project-a/chapter.md"
+        );
+    }
+
+    #[test]
+    fn parse_remote_tree_response_decodes_encoded_segments_without_reencoding_file_url() {
+        let project_url = Url::parse("https://dav.example.com/root/MossWriter/project-a").unwrap();
+        let body = r#"<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:">
+  <response>
+    <href>/root/MossWriter/project-a/</href>
+    <propstat>
+      <prop>
+        <resourcetype><collection /></resourcetype>
+      </prop>
+    </propstat>
+  </response>
+  <response>
+    <href>%E4%B8%AD%20%E6%96%87.md</href>
+    <propstat>
+      <prop>
+        <getetag>"etag-1"</getetag>
+        <getcontentlength>12</getcontentlength>
+      </prop>
+    </propstat>
+  </response>
+</multistatus>"#;
+
+        let snapshot = parse_remote_tree_response(body, &project_url).unwrap();
+        let entry = snapshot.files.get("中 文.md").unwrap();
+
+        assert_eq!(
+            entry.file_url.as_str(),
+            "https://dav.example.com/root/MossWriter/project-a/%E4%B8%AD%20%E6%96%87.md"
+        );
+        assert_eq!(entry.revision.etag.as_deref(), Some("\"etag-1\""));
+        assert_eq!(entry.revision.size, Some(12));
+    }
+
+    #[test]
+    fn parse_remote_tree_response_matches_encoded_project_name_prefix() {
+        let project_url = Url::parse(
+            "https://dav.example.com/root/MossWriter/%E4%B8%AD%E6%96%87%E9%A1%B9%E7%9B%AE",
+        )
+        .unwrap();
+        let body = r#"<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:">
+  <response>
+    <href>/root/MossWriter/%E4%B8%AD%E6%96%87%E9%A1%B9%E7%9B%AE/%E7%AC%AC%201%20%E7%AB%A0.md</href>
+    <propstat>
+      <prop>
+        <getetag>"etag-cn"</getetag>
+      </prop>
+    </propstat>
+  </response>
+</multistatus>"#;
+
+        let snapshot = parse_remote_tree_response(body, &project_url).unwrap();
+
+        assert!(snapshot.files.contains_key("第 1 章.md"));
     }
 
     #[test]

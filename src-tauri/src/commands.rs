@@ -350,8 +350,8 @@ fn resolve_existing_project_file(root: &Path, raw_path: &str) -> AppResult<(Stri
     let root = canonicalize_root(root)?;
     let normalized = normalize_project_file_path(raw_path, false)?;
     let candidate = root.join(Path::new(&normalized));
-    let canonical = fs::canonicalize(&candidate)
-        .map_err(|error| format!("文件不存在或不可访问：{error}"))?;
+    let canonical =
+        fs::canonicalize(&candidate).map_err(|error| format!("文件不存在或不可访问：{error}"))?;
 
     ensure_within_root(&root, &canonical)?;
 
@@ -371,12 +371,11 @@ fn resolve_new_project_file(root: &Path, raw_path: &str) -> AppResult<(String, P
         .ok_or_else(|| "文件路径不合法".to_string())?;
 
     if !parent.exists() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("创建目标目录失败：{error}"))?;
+        fs::create_dir_all(parent).map_err(|error| format!("创建目标目录失败：{error}"))?;
     }
 
-    let canonical_parent = fs::canonicalize(parent)
-        .map_err(|error| format!("目标目录不可访问：{error}"))?;
+    let canonical_parent =
+        fs::canonicalize(parent).map_err(|error| format!("目标目录不可访问：{error}"))?;
     ensure_within_root(&root, &canonical_parent)?;
 
     if !canonical_parent.is_dir() {
@@ -411,7 +410,11 @@ fn file_entry_from_path(root: &Path, path: &Path) -> AppResult<FileEntry> {
     })
 }
 
-fn collect_project_files(root: &Path, directory: &Path, files: &mut Vec<FileEntry>) -> AppResult<()> {
+fn collect_project_files(
+    root: &Path,
+    directory: &Path,
+    files: &mut Vec<FileEntry>,
+) -> AppResult<()> {
     let mut entries = fs::read_dir(directory)
         .map_err(|error| format!("无法读取项目目录：{error}"))?
         .collect::<Result<Vec<_>, _>>()
@@ -426,8 +429,8 @@ fn collect_project_files(root: &Path, directory: &Path, files: &mut Vec<FileEntr
             .map_err(|error| format!("无法读取目录内容：{error}"))?;
 
         if file_type.is_dir() {
-            let canonical = fs::canonicalize(&path)
-                .map_err(|error| format!("无法读取目录内容：{error}"))?;
+            let canonical =
+                fs::canonicalize(&path).map_err(|error| format!("无法读取目录内容：{error}"))?;
             if canonical.starts_with(root) {
                 collect_project_files(root, &path, files)?;
             }
@@ -438,8 +441,8 @@ fn collect_project_files(root: &Path, directory: &Path, files: &mut Vec<FileEntr
             continue;
         }
 
-        let canonical = fs::canonicalize(&path)
-            .map_err(|error| format!("无法读取目录内容：{error}"))?;
+        let canonical =
+            fs::canonicalize(&path).map_err(|error| format!("无法读取目录内容：{error}"))?;
         if canonical.starts_with(root) {
             files.push(file_entry_from_path(root, &path)?);
         }
@@ -482,11 +485,9 @@ pub fn create_project_directory(root: &Path, raw_path: &str) -> AppResult<()> {
     let normalized = normalize_project_directory_path(raw_path)?;
     let dir_path = root.join(Path::new(&normalized));
 
-    fs::create_dir_all(&dir_path)
-        .map_err(|error| format!("创建目录失败：{error}"))?;
+    fs::create_dir_all(&dir_path).map_err(|error| format!("创建目录失败：{error}"))?;
 
-    let canonical = fs::canonicalize(&dir_path)
-        .map_err(|_| "目录创建后无法访问".to_string())?;
+    let canonical = fs::canonicalize(&dir_path).map_err(|_| "目录创建后无法访问".to_string())?;
 
     ensure_within_root(&root, &canonical)?;
 
