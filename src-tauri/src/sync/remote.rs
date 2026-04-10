@@ -307,7 +307,11 @@ where
 
         let partial_snapshot =
             parse_remote_tree_response_for_root(&body, &directory_url, project_url)?;
-        let discovered_directories = partial_snapshot.directories.iter().cloned().collect::<Vec<_>>();
+        let discovered_directories = partial_snapshot
+            .directories
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
         snapshot.root_exists = true;
         merge_remote_snapshot(&mut snapshot, partial_snapshot);
 
