@@ -52,7 +52,7 @@ import {
   getAncestorDirectoryPaths,
   type FileTreeNode,
 } from "@/features/fileManager/fileTree"
-import { getBaseName } from "@/shared/utils/fileNames"
+import { getBaseName, stripMarkdownExtension } from "@/shared/utils/fileNames"
 
 type DialogMode = "file" | "directory"
 
@@ -63,6 +63,7 @@ interface DialogState {
 }
 
 const CLOSED_DIALOG: DialogState = { open: false, mode: "file", parentPath: "" }
+const DEFAULT_UNTITLED_NAME = "未命名"
 
 interface FileSidebarProps {
   onOpenSettings: (tab: SettingsDialogTab) => void
@@ -100,8 +101,36 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
     setNameValue("")
   }
 
-  function getDefaultFileName() {
-    return "新章节"
+  function getParentPath(path: string) {
+    const segments = path.split("/").filter(Boolean)
+    if (segments.length <= 1) {
+      return ""
+    }
+
+    return segments.slice(0, -1).join("/")
+  }
+
+  function getDefaultName(mode: DialogMode, parentPath: string) {
+    const siblings =
+      mode === "file"
+        ? projectState.files
+            .filter((file) => getParentPath(file.path) === parentPath)
+            .map((file) => stripMarkdownExtension(getBaseName(file.path)))
+        : projectState.directories
+            .filter((directory) => getParentPath(directory.path) === parentPath)
+            .map((directory) => getBaseName(directory.path))
+
+    const usedNames = new Set(siblings)
+    if (!usedNames.has(DEFAULT_UNTITLED_NAME)) {
+      return DEFAULT_UNTITLED_NAME
+    }
+
+    let suffix = 2
+    while (usedNames.has(`${DEFAULT_UNTITLED_NAME}(${suffix})`)) {
+      suffix += 1
+    }
+
+    return `${DEFAULT_UNTITLED_NAME}(${suffix})`
   }
 
   function openFileDialog(dirPath?: string) {
@@ -111,12 +140,13 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
       mode: "file",
       parentPath,
     })
-    setNameValue(getDefaultFileName())
+    setNameValue(getDefaultName("file", parentPath))
   }
 
   function switchMode(mode: DialogMode) {
+    const parentPath = dialog.parentPath
     setDialog((prev) => ({ ...prev, mode }))
-    setNameValue(mode === "file" ? getDefaultFileName() : "新文件夹")
+    setNameValue(getDefaultName(mode, parentPath))
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
