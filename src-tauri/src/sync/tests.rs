@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -12,8 +12,8 @@ use super::{
         sorted_paths,
     },
     remote::{
-        build_project_remote_url, classify_remote_tree_lookup, parse_remote_tree_response,
-        resolve_webdav_href, RemoteTreeLookup,
+        build_project_remote_url, classify_remote_tree_lookup, collect_remote_tree_with_fetcher,
+        parse_remote_tree_response, resolve_webdav_href, RemoteTreeLookup,
     },
     storage::{
         current_timestamp_millis, load_sync_settings_from_dir, save_sync_settings_to_dir,
@@ -151,6 +151,152 @@ fn parse_remote_tree_response_matches_encoded_project_name_prefix() {
     let snapshot = parse_remote_tree_response(body, &project_url).unwrap();
 
     assert!(snapshot.files.contains_key("第 1 章.md"));
+}
+
+#[test]
+fn collect_remote_tree_with_fetcher_recursively_discovers_nested_entries() {
+    let project_url = Url::parse("https://dav.example.com/root/MossWriter/project-a").unwrap();
+    let mut calls = BTreeMap::new();
+
+    let snapshot = collect_remote_tree_with_fetcher(&project_url, |url| {
+        *calls.entry(url.as_str().to_string()).or_insert(0) += 1;
+
+        let body = match url.as_str() {
+            "https://dav.example.com/root/MossWriter/project-a" => Some(
+                r#"<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:">
+  <response>
+    <href>/root/MossWriter/project-a/</href>
+    <propstat>
+      <prop>
+        <resourcetype><collection /></resourcetype>
+      </prop>
+    </propstat>
+  </response>
+  <response>
+    <href>/root/MossWriter/project-a/assets/</href>
+    <propstat>
+      <prop>
+        <resourcetype><collection /></resourcetype>
+      </prop>
+    </propstat>
+  </response>
+</multistatus>"#,
+            ),
+            "https://dav.example.com/root/MossWriter/project-a/assets" => Some(
+                r#"<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:">
+  <response>
+    <href>/root/MossWriter/project-a/assets/</href>
+    <propstat>
+      <prop>
+        <resourcetype><collection /></resourcetype>
+      </prop>
+    </propstat>
+  </response>
+  <response>
+    <href>/root/MossWriter/project-a/assets/scenes/</href>
+    <propstat>
+      <prop>
+        <resourcetype><collection /></resourcetype>
+      </prop>
+    </propstat>
+  </response>
+</multistatus>"#,
+            ),
+            "https://dav.example.com/root/MossWriter/project-a/assets/scenes" => Some(
+                r#"<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:">
+  <response>
+    <href>/root/MossWriter/project-a/assets/scenes/</href>
+    <propstat>
+      <prop>
+        <resourcetype><collection /></resourcetype>
+      </prop>
+    </propstat>
+  </response>
+  <response>
+    <href>chapter%201.md</href>
+    <propstat>
+      <prop>
+        <getetag>"etag-nested"</getetag>
+        <getcontentlength>128</getcontentlength>
+      </prop>
+    </propstat>
+  </response>
+</multistatus>"#,
+            ),
+            _ => None,
+        };
+
+        Ok(body.map(str::to_string))
+    })
+    .unwrap();
+
+    assert!(snapshot.root_exists);
+    assert!(snapshot.directories.contains("assets"));
+    assert!(snapshot.directories.contains("assets/scenes"));
+    assert!(snapshot.files.contains_key("assets/scenes/chapter 1.md"));
+    assert_eq!(
+        snapshot
+            .files
+            .get("assets/scenes/chapter 1.md")
+            .unwrap()
+            .file_url
+            .as_str(),
+        "https://dav.example.com/root/MossWriter/project-a/assets/scenes/chapter%201.md"
+    );
+    assert_eq!(
+        calls.get("https://dav.example.com/root/MossWriter/project-a"),
+        Some(&1)
+    );
+    assert_eq!(
+        calls.get("https://dav.example.com/root/MossWriter/project-a/assets"),
+        Some(&1)
+    );
+    assert_eq!(
+        calls.get("https://dav.example.com/root/MossWriter/project-a/assets/scenes"),
+        Some(&1)
+    );
+}
+
+#[test]
+fn collect_remote_tree_with_fetcher_ignores_missing_nested_listing_after_discovery() {
+    let project_url = Url::parse("https://dav.example.com/root/MossWriter/project-a").unwrap();
+
+    let snapshot = collect_remote_tree_with_fetcher(&project_url, |url| {
+        let body = match url.as_str() {
+            "https://dav.example.com/root/MossWriter/project-a" => Some(
+                r#"<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:">
+  <response>
+    <href>/root/MossWriter/project-a/</href>
+    <propstat>
+      <prop>
+        <resourcetype><collection /></resourcetype>
+      </prop>
+    </propstat>
+  </response>
+  <response>
+    <href>/root/MossWriter/project-a/assets/</href>
+    <propstat>
+      <prop>
+        <resourcetype><collection /></resourcetype>
+      </prop>
+    </propstat>
+  </response>
+</multistatus>"#,
+            ),
+            _ => None,
+        };
+
+        Ok(body.map(str::to_string))
+    })
+    .unwrap();
+
+    assert!(snapshot.root_exists);
+    assert!(snapshot.directories.contains("assets"));
+    assert!(snapshot.files.is_empty());
 }
 
 #[test]

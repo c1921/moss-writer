@@ -64,7 +64,7 @@ impl WebDavClient {
     pub(crate) fn test_connection(&self) -> SyncResult<()> {
         let response = self
             .request(propfind_method(), self.root_url.clone())
-            .headers(propfind_headers())
+            .headers(propfind_headers("0"))
             .body(PROPFIND_REQUEST_BODY.to_string())
             .send()
             .map_err(|error| format!("WebDAV 连接失败：{error}"))?;
@@ -79,21 +79,9 @@ impl WebDavClient {
     }
 
     pub(crate) fn list_tree(&self, project_url: &Url) -> SyncResult<RemoteSnapshot> {
-        let response = self
-            .request(propfind_method(), project_url.clone())
-            .headers(propfind_headers())
-            .body(PROPFIND_REQUEST_BODY.to_string())
-            .send()
-            .map_err(|error| format!("读取 WebDAV 目录失败：{error}"))?;
-
-        if classify_remote_tree_lookup(response.status())? == RemoteTreeLookup::Missing {
-            return Ok(RemoteSnapshot::default());
-        }
-
-        let body = response
-            .text()
-            .map_err(|error| format!("读取 WebDAV 响应失败：{error}"))?;
-        parse_remote_tree_response(&body, project_url)
+        collect_remote_tree_with_fetcher(project_url, |directory_url| {
+            self.fetch_directory_listing(directory_url)
+        })
     }
 
     pub(crate) fn get_file(&self, file_url: &Url) -> SyncResult<Vec<u8>> {
@@ -184,6 +172,23 @@ impl WebDavClient {
             .request(method, url)
             .basic_auth(&self.username, Some(&self.password))
     }
+
+    fn fetch_directory_listing(&self, directory_url: &Url) -> SyncResult<Option<String>> {
+        let response = self
+            .request(propfind_method(), directory_url.clone())
+            .headers(propfind_headers("1"))
+            .body(PROPFIND_REQUEST_BODY.to_string())
+            .send()
+            .map_err(|error| format!("读取 WebDAV 目录失败：{error}"))?;
+
+        match classify_remote_tree_lookup(response.status())? {
+            RemoteTreeLookup::Missing => Ok(None),
+            RemoteTreeLookup::Found => response
+                .text()
+                .map(Some)
+                .map_err(|error| format!("读取 WebDAV 响应失败：{error}")),
+        }
+    }
 }
 
 pub(crate) fn sanitize_sync_settings(
@@ -263,8 +268,62 @@ pub(crate) fn resolve_webdav_href(project_url: &Url, href: &str) -> SyncResult<U
         .map_err(|error| format!("WebDAV 返回了无法识别的路径：{error}"))
 }
 
+#[cfg(test)]
 pub(crate) fn parse_remote_tree_response(
     body: &str,
+    project_url: &Url,
+) -> SyncResult<RemoteSnapshot> {
+    parse_remote_tree_response_for_root(body, project_url, project_url)
+}
+
+pub(crate) fn collect_remote_tree_with_fetcher<F>(
+    project_url: &Url,
+    mut fetch_directory: F,
+) -> SyncResult<RemoteSnapshot>
+where
+    F: FnMut(&Url) -> SyncResult<Option<String>>,
+{
+    let mut snapshot = RemoteSnapshot::default();
+    let mut pending_directories = vec![String::new()];
+    let mut visited_directories = BTreeSet::new();
+
+    while let Some(relative_directory) = pending_directories.pop() {
+        if !visited_directories.insert(relative_directory.clone()) {
+            continue;
+        }
+
+        let directory_url = if relative_directory.is_empty() {
+            project_url.clone()
+        } else {
+            join_relative_path(project_url, &relative_directory)?
+        };
+
+        let Some(body) = fetch_directory(&directory_url)? else {
+            if relative_directory.is_empty() {
+                return Ok(RemoteSnapshot::default());
+            }
+            continue;
+        };
+
+        let partial_snapshot =
+            parse_remote_tree_response_for_root(&body, &directory_url, project_url)?;
+        let discovered_directories = partial_snapshot.directories.iter().cloned().collect::<Vec<_>>();
+        snapshot.root_exists = true;
+        merge_remote_snapshot(&mut snapshot, partial_snapshot);
+
+        for directory in discovered_directories.into_iter().rev() {
+            if !visited_directories.contains(&directory) {
+                pending_directories.push(directory);
+            }
+        }
+    }
+
+    Ok(snapshot)
+}
+
+fn parse_remote_tree_response_for_root(
+    body: &str,
+    request_url: &Url,
     project_url: &Url,
 ) -> SyncResult<RemoteSnapshot> {
     let document =
@@ -283,7 +342,7 @@ pub(crate) fn parse_remote_tree_response(
             continue;
         };
 
-        let resolved_url = resolve_webdav_href(project_url, &href)?;
+        let resolved_url = resolve_webdav_href(request_url, &href)?;
         let response_segments = collect_url_segments(&resolved_url);
 
         if response_segments.len() < root_segments.len()
@@ -488,9 +547,11 @@ fn mkcol_method() -> Method {
     Method::from_bytes(b"MKCOL").expect("MKCOL should be a valid HTTP method")
 }
 
-fn propfind_headers() -> HeaderMap {
+fn propfind_headers(depth: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    headers.insert("Depth", HeaderValue::from_static("infinity"));
+    let depth_value =
+        HeaderValue::from_str(depth).expect("PROPFIND depth should be a valid header value");
+    headers.insert("Depth", depth_value);
     headers.insert(
         CONTENT_TYPE,
         HeaderValue::from_static("application/xml; charset=utf-8"),
@@ -546,6 +607,12 @@ fn decode_url_segment(segment: &str) -> SyncResult<String> {
 
 fn parent_directory(path: &str) -> Option<String> {
     path.rsplit_once('/').map(|(parent, _)| parent.to_string())
+}
+
+fn merge_remote_snapshot(target: &mut RemoteSnapshot, source: RemoteSnapshot) {
+    target.root_exists |= source.root_exists;
+    target.directories.extend(source.directories);
+    target.files.extend(source.files);
 }
 
 fn find_child_text(node: roxmltree::Node<'_, '_>, child_name: &str) -> Option<String> {
