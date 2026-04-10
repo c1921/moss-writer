@@ -359,12 +359,21 @@ export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppeara
   const [isVersionLoading, setIsVersionLoading] = useState(false)
 
   useEffect(() => {
-    if (open) {
-      setForm(syncState.settings)
-      setSaveFeedback(null)
-      setActiveTab("general")
-      setResolveStrategy(null)
+    if (!open) {
+      return
     }
+
+    setSaveFeedback(null)
+    setActiveTab("general")
+    setResolveStrategy(null)
+  }, [open])
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    setForm(syncState.settings)
   }, [open, syncState.settings])
 
   useEffect(() => {

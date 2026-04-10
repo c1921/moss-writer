@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { useSyncExternalStore } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const useWriterProjectStateMock = vi.fn()
@@ -19,6 +20,7 @@ vi.mock("@tauri-apps/api/app", () => ({
 
 import { SettingsDialog } from "@/features/settings/SettingsDialog"
 import type { AppearanceSettings } from "@/app/appearanceSettings"
+import type { WebDavSettings } from "@/features/settings/types"
 
 const defaultAppearance: AppearanceSettings = {
   mainEditorFontSize: 16,
@@ -30,10 +32,45 @@ const defaultAppearance: AppearanceSettings = {
 describe("SettingsDialog", () => {
   const onOpenChangeMock = vi.fn()
   const resolveSyncPendingMock = vi.fn(async () => null)
+  const pullSyncMock = vi.fn(async () => null)
+  const saveSyncSettingsMock = vi.fn(async (settings: WebDavSettings) => settings)
+  const reloadSyncSettingsMock = vi.fn(async () => {})
+
+  function createSyncSettingsStore(initial: WebDavSettings) {
+    let current = initial
+    const listeners = new Set<() => void>()
+
+    return {
+      getSnapshot: () => current,
+      set(next: WebDavSettings) {
+        current = next
+        listeners.forEach((listener) => listener())
+      },
+      subscribe(listener: () => void) {
+        listeners.add(listener)
+        return () => {
+          listeners.delete(listener)
+        }
+      },
+    }
+  }
+
+  let syncSettingsStore: ReturnType<typeof createSyncSettingsStore>
+  let baseSyncSettings: WebDavSettings
 
   beforeEach(() => {
     vi.clearAllMocks()
     getVersionMock.mockResolvedValue("1.2.3")
+    baseSyncSettings = {
+      enabled: true,
+      rootUrl: "https://dav.example.com/root",
+      username: "writer",
+      password: "secret",
+      autoPullOnOpen: true,
+      autoPushOnSave: true,
+      autoPushMinIntervalSeconds: 120,
+    }
+    syncSettingsStore = createSyncSettingsStore(baseSyncSettings)
     useWriterProjectStateMock.mockReturnValue({
       projectPath: "/project",
       files: [],
@@ -41,62 +78,73 @@ describe("SettingsDialog", () => {
       isProjectLoading: false,
       isFileLoading: false,
     })
+    saveSyncSettingsMock.mockImplementation(async (settings) => {
+      syncSettingsStore.set(settings)
+      return settings
+    })
+    reloadSyncSettingsMock.mockImplementation(async () => {
+      syncSettingsStore.set({
+        ...syncSettingsStore.getSnapshot(),
+        rootUrl: "https://dav.example.com/reloaded",
+        username: "reloaded-user",
+        password: "reloaded-secret",
+      })
+    })
     useWriterSyncActionsMock.mockReturnValue({
-      reloadSyncSettings: vi.fn(async () => {}),
-      saveSyncSettings: vi.fn(async (settings) => settings),
+      reloadSyncSettings: reloadSyncSettingsMock,
+      saveSyncSettings: saveSyncSettingsMock,
       testSyncConnection: vi.fn(async () => null),
-      pullSync: vi.fn(async () => null),
+      pullSync: pullSyncMock,
       pushSync: vi.fn(async () => null),
       resolveSyncPending: resolveSyncPendingMock,
     })
-    useWriterSyncStateMock.mockReturnValue({
-      settings: {
-        enabled: true,
-        rootUrl: "https://dav.example.com/root",
-        username: "writer",
-        password: "secret",
-        autoPullOnOpen: true,
-        autoPushOnSave: true,
-        autoPushMinIntervalSeconds: 120,
-      },
-      isSettingsLoading: false,
-      isSyncing: false,
-      activeDirection: null,
-      lastDirection: "pull",
-      lastSuccessfulSyncAt: 1,
-      lastResult: {
-        status: "warning",
-        message: "已拉取 1 项更新，但仍有 2 项待处理差异",
-        changedPaths: [],
-        changedDirectories: [],
-        conflicts: [],
-        skippedDeletionPaths: [],
-        pendingItems: [
-          {
-            path: "新章节.md",
-            entryType: "file",
-            reason: "initialContentMismatch",
-            localExists: true,
-            remoteExists: true,
-            localModifiedAt: 1_000,
-            remoteModifiedAt: 2_000,
-            latestResolution: "remote",
-            latestResolutionReason: "remoteNewer",
-          },
-          {
-            path: "chapters",
-            entryType: "directory",
-            reason: "remoteDeletedLocalPresent",
-            localExists: true,
-            remoteExists: false,
-            localModifiedAt: null,
-            remoteModifiedAt: null,
-            latestResolution: "undetermined",
-            latestResolutionReason: "directoryDeletionConflict",
-          },
-        ],
-        syncedAt: 1,
-      },
+    useWriterSyncStateMock.mockImplementation(() => {
+      const settings = useSyncExternalStore(
+        syncSettingsStore.subscribe,
+        syncSettingsStore.getSnapshot
+      )
+
+      return {
+        settings,
+        isSettingsLoading: false,
+        isSyncing: false,
+        activeDirection: null,
+        lastDirection: "pull",
+        lastSuccessfulSyncAt: 1,
+        lastResult: {
+          status: "warning",
+          message: "已拉取 1 项更新，但仍有 2 项待处理差异",
+          changedPaths: [],
+          changedDirectories: [],
+          conflicts: [],
+          skippedDeletionPaths: [],
+          pendingItems: [
+            {
+              path: "新章节.md",
+              entryType: "file",
+              reason: "initialContentMismatch",
+              localExists: true,
+              remoteExists: true,
+              localModifiedAt: 1_000,
+              remoteModifiedAt: 2_000,
+              latestResolution: "remote",
+              latestResolutionReason: "remoteNewer",
+            },
+            {
+              path: "chapters",
+              entryType: "directory",
+              reason: "remoteDeletedLocalPresent",
+              localExists: true,
+              remoteExists: false,
+              localModifiedAt: null,
+              remoteModifiedAt: null,
+              latestResolution: "undetermined",
+              latestResolutionReason: "directoryDeletionConflict",
+            },
+          ],
+          syncedAt: 1,
+        },
+      }
     })
   })
 
@@ -161,5 +209,64 @@ describe("SettingsDialog", () => {
     await user.click(screen.getByRole("tab", { name: "关于" }))
 
     await waitFor(() => expect(screen.getByText("未知")).not.toBeNull())
+  })
+
+  it("在 WebDAV 页保存设置后仍停留在当前标签页", async () => {
+    const user = userEvent.setup()
+
+    render(<SettingsDialog appearance={defaultAppearance} onChangeAppearance={vi.fn()} onOpenChange={onOpenChangeMock} open />)
+
+    await user.click(screen.getByRole("tab", { name: "WebDAV" }))
+    await user.clear(screen.getByLabelText("WebDAV 根地址"))
+    await user.type(screen.getByLabelText("WebDAV 根地址"), "https://dav.example.com/updated")
+    await user.click(screen.getByRole("button", { name: "保存设置" }))
+
+    await waitFor(() =>
+      expect(saveSyncSettingsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rootUrl: "https://dav.example.com/updated",
+        })
+      )
+    )
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("https://dav.example.com/updated")).not.toBeNull()
+    )
+    expect(screen.getByText("WebDAV 连接")).not.toBeNull()
+    expect(screen.queryByText("基本设置（即将推出）")).toBeNull()
+  })
+
+  it("在 WebDAV 页重新载入设置后仍停留在当前标签页", async () => {
+    const user = userEvent.setup()
+
+    render(<SettingsDialog appearance={defaultAppearance} onChangeAppearance={vi.fn()} onOpenChange={onOpenChangeMock} open />)
+
+    await user.click(screen.getByRole("tab", { name: "WebDAV" }))
+    await user.click(screen.getByRole("button", { name: "重新载入设置" }))
+
+    await waitFor(() => expect(reloadSyncSettingsMock).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("https://dav.example.com/reloaded")).not.toBeNull()
+    )
+    expect(screen.getByText("WebDAV 连接")).not.toBeNull()
+    expect(screen.queryByText("基本设置（即将推出）")).toBeNull()
+  })
+
+  it("在 WebDAV 页执行立即拉取时，隐式保存后仍停留在当前标签页", async () => {
+    const user = userEvent.setup()
+
+    render(<SettingsDialog appearance={defaultAppearance} onChangeAppearance={vi.fn()} onOpenChange={onOpenChangeMock} open />)
+
+    await user.click(screen.getByRole("tab", { name: "WebDAV" }))
+    await user.clear(screen.getByLabelText("WebDAV 根地址"))
+    await user.type(screen.getByLabelText("WebDAV 根地址"), "https://dav.example.com/pull-before-save")
+    await user.click(screen.getByRole("button", { name: "立即拉取" }))
+
+    await waitFor(() => expect(saveSyncSettingsMock).toHaveBeenCalled())
+    await waitFor(() => expect(pullSyncMock).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("https://dav.example.com/pull-before-save")).not.toBeNull()
+    )
+    expect(screen.getByText("WebDAV 连接")).not.toBeNull()
+    expect(screen.queryByText("基本设置（即将推出）")).toBeNull()
   })
 })
