@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "moss-writer",
+  "productName": "Moss Writer",
   "version": "../package.json",
   "identifier": "c1921.moss-writer",
   "build": {
