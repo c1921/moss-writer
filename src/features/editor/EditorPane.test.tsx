@@ -43,7 +43,7 @@ describe("EditorPane", () => {
     expect(screen.queryByText("当前章节")).toBeNull();
     expect(screen.queryByText("drafts/chapter-1.md")).toBeNull();
 
-    const textarea = screen.getByLabelText("小说正文编辑区");
+    const textarea = screen.getByLabelText("正文编辑区");
     expect((textarea as HTMLTextAreaElement).value).toBe("第一段");
 
     fireEvent.change(textarea, { target: { value: "新的内容" } });
@@ -68,7 +68,7 @@ describe("EditorPane", () => {
 
     render(<EditorPane variant="mini" />);
 
-    const textarea = screen.getByLabelText("小说正文编辑区") as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText("正文编辑区") as HTMLTextAreaElement;
     expect(textarea.placeholder).toBe("先在正常模式打开一个项目");
     expect(textarea.disabled).toBe(true);
     expect(screen.queryByText("专注写作")).toBeNull();

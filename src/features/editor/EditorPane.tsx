@@ -49,7 +49,7 @@ function renderMiniPane(
     <section className="flex h-full flex-1 flex-col">
       <div className="flex flex-1 flex-col px-3 pb-3">
         <Textarea
-          aria-label="小说正文编辑区"
+          aria-label="正文编辑区"
           className={cn(
             "flex-1 resize-none border-0 bg-transparent px-1 py-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 field-sizing-fixed overflow-y-auto",
             disabled && "text-muted-foreground",
@@ -77,7 +77,7 @@ export function EditorPane({ variant = "standard", fontSizePx }: EditorPaneProps
     }
 
     return renderEmptyState(
-      "先打开一个小说项目",
+      "先打开一个项目",
       "项目中的 `.md` 文件会按实际目录结构显示在左侧，右侧保持纯文本写作体验。",
       "专注写作",
       <BookOpen className="size-5" />,
@@ -102,7 +102,7 @@ export function EditorPane({ variant = "standard", fontSizePx }: EditorPaneProps
       <section className="flex h-full flex-1 flex-col">
         <div className="flex flex-1 flex-col px-3 pb-3">
           <Textarea
-            aria-label="小说正文编辑区"
+            aria-label="正文编辑区"
             className="flex-1 resize-none border-0 bg-transparent px-1 py-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 field-sizing-fixed overflow-y-auto"
             disabled={editorState.isFileLoading}
             onChange={(event) => updateEditorContent(event.currentTarget.value)}
@@ -120,7 +120,7 @@ export function EditorPane({ variant = "standard", fontSizePx }: EditorPaneProps
     <section className="flex h-full flex-1 flex-col">
       <div className="flex flex-1 flex-col px-6 py-4">
         <Textarea
-          aria-label="小说正文编辑区"
+          aria-label="正文编辑区"
           className="flex-1 resize-none border-0 px-1 py-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 field-sizing-fixed overflow-y-auto"
           disabled={editorState.isFileLoading}
           onChange={(event) => updateEditorContent(event.currentTarget.value)}

@@ -147,7 +147,7 @@ impl ProjectState {
             .lock()
             .map_err(|_| "项目状态不可用，请重试".to_string())?
             .clone()
-            .ok_or_else(|| "请先打开一个小说项目".to_string())
+            .ok_or_else(|| "请先打开一个项目".to_string())
     }
 
     pub fn suppress_paths<I>(&self, paths: I)
