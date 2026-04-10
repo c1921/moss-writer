@@ -121,7 +121,7 @@ fn install_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 ..
             } = event
             {
-                let _ = show_main_window(&tray.app_handle());
+                let _ = show_main_window(tray.app_handle());
             }
         });
 
@@ -140,7 +140,7 @@ fn install_global_shortcut<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> 
     app.plugin(
         tauri_plugin_global_shortcut::Builder::new()
             .with_handler({
-                let shortcut = minimize_to_tray_shortcut.clone();
+                let shortcut = minimize_to_tray_shortcut;
                 move |app, triggered_shortcut, event| {
                     if triggered_shortcut == &shortcut && event.state() == ShortcutState::Pressed {
                         let _ = toggle_main_window_from_shortcut(app);
