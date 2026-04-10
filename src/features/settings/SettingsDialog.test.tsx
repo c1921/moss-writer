@@ -27,6 +27,7 @@ const defaultAppearance: AppearanceSettings = {
   miniEditorFontSize: 15,
   miniWindowOpacity: 78,
   miniWindowShowStatusBar: true,
+  showLineNumbers: true,
 }
 
 describe("SettingsDialog", () => {
@@ -268,5 +269,27 @@ describe("SettingsDialog", () => {
     )
     expect(screen.getByText("WebDAV 连接")).not.toBeNull()
     expect(screen.queryByText("基本设置（即将推出）")).toBeNull()
+  })
+
+  it("外观页可以切换显示行号", async () => {
+    const user = userEvent.setup()
+    const onChangeAppearanceMock = vi.fn()
+
+    render(
+      <SettingsDialog
+        appearance={defaultAppearance}
+        onChangeAppearance={onChangeAppearanceMock}
+        onOpenChange={onOpenChangeMock}
+        open
+      />
+    )
+
+    await user.click(screen.getByRole("tab", { name: "外观" }))
+    await user.click(screen.getByRole("switch", { name: "显示行号" }))
+
+    expect(onChangeAppearanceMock).toHaveBeenCalledWith({
+      ...defaultAppearance,
+      showLineNumbers: false,
+    })
   })
 })

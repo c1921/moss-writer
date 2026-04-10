@@ -8,6 +8,7 @@ import {
 } from "@/app/WriterAppContext";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { CodeMirrorEditor } from "@/features/editor/CodeMirrorEditor";
 import { cn } from "@/lib/utils";
 
 type EditorPaneVariant = "standard" | "mini";
@@ -15,6 +16,7 @@ type EditorPaneVariant = "standard" | "mini";
 interface EditorPaneProps {
   variant?: EditorPaneVariant;
   fontSizePx?: number;
+  showLineNumbers?: boolean;
 }
 
 function renderEmptyState(
@@ -65,7 +67,11 @@ function renderMiniPane(
   );
 }
 
-export function EditorPane({ variant = "standard", fontSizePx }: EditorPaneProps) {
+export function EditorPane({
+  variant = "standard",
+  fontSizePx,
+  showLineNumbers = true,
+}: EditorPaneProps) {
   const projectState = useWriterProjectState();
   const editorState = useWriterEditorState();
   const { updateEditorContent } = useWriterAppActions();
@@ -101,14 +107,16 @@ export function EditorPane({ variant = "standard", fontSizePx }: EditorPaneProps
     return (
       <section className="flex h-full flex-1 flex-col">
         <div className="flex flex-1 flex-col px-3 pb-3">
-          <Textarea
-            aria-label="正文编辑区"
-            className="flex-1 resize-none border-0 bg-transparent px-1 py-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 field-sizing-fixed overflow-y-auto"
-            disabled={editorState.isFileLoading}
-            onChange={(event) => updateEditorContent(event.currentTarget.value)}
+          <CodeMirrorEditor
+            ariaLabel="正文编辑区"
+            className="bg-transparent"
+            dataTestId="editor-input"
+            fontSizePx={fontSizePx ?? 15}
+            lineHeight="1.8"
+            onChange={updateEditorContent}
             placeholder="开始写作..."
-            spellCheck={false}
-            style={{ fontSize: `${fontSizePx ?? 15}px`, lineHeight: "1.8" }}
+            readOnly={editorState.isFileLoading}
+            showLineNumbers={showLineNumbers}
             value={editorState.editorContent}
           />
         </div>
@@ -119,14 +127,16 @@ export function EditorPane({ variant = "standard", fontSizePx }: EditorPaneProps
   return (
     <section className="flex h-full flex-1 flex-col">
       <div className="flex flex-1 flex-col px-6 py-4">
-        <Textarea
-          aria-label="正文编辑区"
-          className="flex-1 resize-none border-0 px-1 py-0 shadow-none focus-visible:border-transparent focus-visible:ring-0 field-sizing-fixed overflow-y-auto"
-          disabled={editorState.isFileLoading}
-          onChange={(event) => updateEditorContent(event.currentTarget.value)}
+        <CodeMirrorEditor
+          ariaLabel="正文编辑区"
+          className="bg-transparent"
+          dataTestId="editor-input"
+          fontSizePx={fontSizePx ?? 16}
+          lineHeight="2"
+          onChange={updateEditorContent}
           placeholder="开始写作..."
-          spellCheck={false}
-          style={{ fontSize: `${fontSizePx ?? 16}px`, lineHeight: "2.0" }}
+          readOnly={editorState.isFileLoading}
+          showLineNumbers={showLineNumbers}
           value={editorState.editorContent}
         />
       </div>

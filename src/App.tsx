@@ -36,6 +36,7 @@ interface StandardWorkspaceProps {
   onEnterMiniWindowMode: () => void;
   onOpenSettings: (tab: SettingsDialogTab) => void;
   mainEditorFontSizePx: number;
+  showLineNumbers: boolean;
 }
 
 function StandardWorkspace({
@@ -44,6 +45,7 @@ function StandardWorkspace({
   onEnterMiniWindowMode,
   onOpenSettings,
   mainEditorFontSizePx,
+  showLineNumbers,
 }: StandardWorkspaceProps) {
   return (
     <div className="h-svh bg-background">
@@ -79,7 +81,7 @@ function StandardWorkspace({
               </Alert>
             </div>
           ) : null}
-          <EditorPane fontSizePx={mainEditorFontSizePx} />
+          <EditorPane fontSizePx={mainEditorFontSizePx} showLineNumbers={showLineNumbers} />
         </SidebarInset>
       </SidebarProvider>
     </div>
@@ -148,7 +150,11 @@ function MiniWindowWorkspace({
           </Button>
         </header>
         <div className="flex flex-1 pt-2">
-          <EditorPane fontSizePx={appearance.miniEditorFontSize} variant="mini" />
+          <EditorPane
+            fontSizePx={appearance.miniEditorFontSize}
+            showLineNumbers={appearance.showLineNumbers}
+            variant="mini"
+          />
         </div>
       </section>
     </div>
@@ -198,6 +204,7 @@ function AppShell() {
           mainEditorFontSizePx={appearance.mainEditorFontSize}
           onEnterMiniWindowMode={() => void handleEnterMiniWindowMode()}
           onOpenSettings={(tab) => void handleOpenSettings(tab)}
+          showLineNumbers={appearance.showLineNumbers}
         />
       )}
       <SettingsDialog

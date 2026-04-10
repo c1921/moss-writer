@@ -26,7 +26,7 @@ export function AppearancePanel({ settings, onChangeSettings }: AppearancePanelP
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium">编辑器字体</CardTitle>
+          <CardTitle className="text-sm font-medium">编辑器</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between gap-4">
@@ -58,6 +58,18 @@ export function AppearancePanel({ settings, onChangeSettings }: AppearancePanelP
               />
               <span className="text-sm text-muted-foreground">px</span>
             </div>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <Label className="shrink-0 text-sm" htmlFor="show-line-numbers">
+              显示行号
+            </Label>
+            <Switch
+              checked={settings.showLineNumbers}
+              id="show-line-numbers"
+              onCheckedChange={(checked) =>
+                onChangeSettings({ ...settings, showLineNumbers: checked })
+              }
+            />
           </div>
         </CardContent>
       </Card>

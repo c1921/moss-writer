@@ -144,4 +144,71 @@
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+
+  .writer-editor {
+    min-height: 0;
+  }
+
+  .writer-editor .cm-editor {
+    height: 100%;
+    background: transparent;
+    color: var(--color-foreground);
+  }
+
+  .writer-editor .cm-scroller {
+    overflow: auto;
+    font-family: inherit;
+  }
+
+  .writer-editor .cm-content,
+  .writer-editor .cm-gutters {
+    font-size: var(--writer-editor-font-size, 16px);
+    line-height: var(--writer-editor-line-height, 2);
+  }
+
+  .writer-editor .cm-content {
+    min-height: 100%;
+    padding: 0;
+    caret-color: var(--color-foreground);
+  }
+
+  .writer-editor .cm-line {
+    padding: 0;
+  }
+
+  .writer-editor .cm-gutters {
+    flex-shrink: 0;
+    background: transparent;
+    border-right: 1px solid var(--color-border);
+    margin-right: 1rem;
+    padding-right: 0.75rem;
+  }
+
+  .writer-editor .cm-gutterElement {
+    min-width: 2ch;
+    padding: 0;
+  }
+
+  .writer-editor .cm-activeLineGutter,
+  .writer-editor .cm-activeLine {
+    background: transparent;
+  }
+
+  .writer-editor .cm-placeholder {
+    color: var(--color-muted-foreground);
+  }
+
+  .writer-editor .cm-editor.cm-focused {
+    outline: none;
+  }
+
+  .writer-editor.is-read-only .cm-content {
+    color: var(--color-muted-foreground);
+    caret-color: transparent;
+  }
+
+  .writer-editor.is-read-only .cm-cursor,
+  .writer-editor.is-read-only .cm-dropCursor {
+    border-left-color: transparent;
+  }
 }

@@ -3,6 +3,7 @@ export interface AppearanceSettings {
   miniEditorFontSize: number
   miniWindowOpacity: number
   miniWindowShowStatusBar: boolean
+  showLineNumbers: boolean
 }
 
 const APPEARANCE_SETTINGS_KEY = "moss-writer/appearance-v1"
@@ -12,6 +13,7 @@ const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   miniEditorFontSize: 15,
   miniWindowOpacity: 78,
   miniWindowShowStatusBar: true,
+  showLineNumbers: true,
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -41,6 +43,10 @@ function normalizeAppearanceSettings(parsed: unknown): AppearanceSettings {
       typeof candidate.miniWindowShowStatusBar === "boolean"
         ? candidate.miniWindowShowStatusBar
         : DEFAULT_APPEARANCE_SETTINGS.miniWindowShowStatusBar,
+    showLineNumbers:
+      typeof candidate.showLineNumbers === "boolean"
+        ? candidate.showLineNumbers
+        : DEFAULT_APPEARANCE_SETTINGS.showLineNumbers,
   }
 }
 
