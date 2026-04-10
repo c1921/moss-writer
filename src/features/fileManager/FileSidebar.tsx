@@ -59,10 +59,10 @@ type DialogMode = "file" | "directory"
 interface DialogState {
   open: boolean
   mode: DialogMode
-  initialPath: string
+  parentPath: string
 }
 
-const CLOSED_DIALOG: DialogState = { open: false, mode: "file", initialPath: "" }
+const CLOSED_DIALOG: DialogState = { open: false, mode: "file", parentPath: "" }
 
 interface FileSidebarProps {
   onOpenSettings: (tab: SettingsDialogTab) => void
@@ -79,7 +79,10 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
 
   const busy = projectState.isProjectLoading || projectState.isFileLoading
   const actionsDisabled = busy || isSubmitting
-  const fileTree = useMemo(() => buildFileTree(projectState.files), [projectState.files])
+  const fileTree = useMemo(
+    () => buildFileTree(projectState.files, projectState.directories),
+    [projectState.directories, projectState.files],
+  )
 
   useEffect(() => {
     const ancestors = getAncestorDirectoryPaths(projectState.currentFilePath)
@@ -92,34 +95,28 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
     }
   }, [projectState.currentFilePath])
 
-  // Sync input when dialog opens
-  useEffect(() => {
-    if (dialog.open) {
-      setNameValue(dialog.initialPath)
-    }
-  }, [dialog.open, dialog.initialPath])
-
   function closeDialog() {
     setDialog(CLOSED_DIALOG)
     setNameValue("")
   }
 
+  function getDefaultFileName() {
+    return "新章节"
+  }
+
   function openFileDialog(dirPath?: string) {
+    const parentPath = dirPath ?? ""
     setDialog({
       open: true,
       mode: "file",
-      initialPath: dirPath ? `${dirPath}/新章节` : "新章节",
+      parentPath,
     })
+    setNameValue(getDefaultFileName())
   }
 
   function switchMode(mode: DialogMode) {
-    const currentBase = nameValue.replace(/\/[^/]*$/, "") || ""
-    if (mode === "file") {
-      setNameValue(currentBase ? `${currentBase}/新章节` : "新章节")
-    } else {
-      setNameValue(currentBase ? `${currentBase}/新文件夹` : "新文件夹")
-    }
     setDialog((prev) => ({ ...prev, mode }))
+    setNameValue(mode === "file" ? getDefaultFileName() : "新文件夹")
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -130,13 +127,13 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
     setIsSubmitting(true)
     try {
       if (dialog.mode === "file") {
-        await createFile(value)
+        const path = dialog.parentPath ? `${dialog.parentPath}/${value}` : value
+        await createFile(path)
         closeDialog()
       } else {
-        await createDirectory(value)
-        // After creating directory, switch to file creation inside it
-        setDialog({ open: true, mode: "file", initialPath: `${value}/新章节` })
-        setNameValue(`${value}/新章节`)
+        const path = dialog.parentPath ? `${dialog.parentPath}/${value}` : value
+        await createDirectory(path)
+        closeDialog()
       }
     } finally {
       setIsSubmitting(false)
@@ -304,7 +301,7 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
                   <BookOpen className="size-4" />
                   <p>打开本地文件夹后，这里会按目录结构显示章节。</p>
                 </div>
-              ) : projectState.files.length === 0 ? (
+              ) : projectState.files.length === 0 && projectState.directories.length === 0 ? (
                 <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground mx-2">
                   <FilePlus2 className="size-4" />
                   <p>
@@ -345,8 +342,8 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
               <DialogTitle>新建</DialogTitle>
               <DialogDescription>
                 {dialog.mode === "file"
-                  ? "创建 Markdown 章节文件。路径中的父目录如不存在会自动创建。"
-                  : "创建子文件夹，完成后可在其中新建章节。"}
+                  ? `在${dialog.parentPath || "项目根目录"}下创建 Markdown 章节文件。输入名称即可，也支持相对路径。`
+                  : `在${dialog.parentPath || "项目根目录"}下创建子文件夹。输入名称即可，也支持相对路径。`}
               </DialogDescription>
             </DialogHeader>
 
@@ -368,14 +365,14 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
 
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor={nameInputId}>
-                {dialog.mode === "file" ? "章节路径" : "文件夹路径"}
+                {dialog.mode === "file" ? "章节名称" : "文件夹名称"}
               </label>
               <Input
                 autoFocus
                 id={nameInputId}
                 key={dialog.mode}
                 onChange={(event) => setNameValue(event.currentTarget.value)}
-                placeholder={dialog.mode === "file" ? "例如：卷一/第一章" : "例如：卷一"}
+                placeholder={dialog.mode === "file" ? "例如：第一章" : "例如：人物/主角"}
                 value={nameValue}
               />
               {dialog.mode === "file" && (
@@ -394,7 +391,7 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
               </Button>
               <Button disabled={isSubmitting || !nameValue.trim()} type="submit">
                 {isSubmitting ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                {dialog.mode === "file" ? "创建章节" : "创建并继续"}
+                {dialog.mode === "file" ? "创建章节" : "创建文件夹"}
               </Button>
             </DialogFooter>
           </form>

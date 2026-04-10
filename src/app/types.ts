@@ -6,9 +6,15 @@ export interface FileEntry {
   updatedAt?: number | null;
 }
 
+export interface DirectoryEntry {
+  name: string;
+  path: string;
+}
+
 export interface ProjectSnapshot {
   projectPath: string;
   files: FileEntry[];
+  directories?: DirectoryEntry[];
 }
 
 export interface SessionState {
@@ -19,6 +25,7 @@ export interface SessionState {
 export interface AppState {
   projectPath: string | null;
   files: FileEntry[];
+  directories: DirectoryEntry[];
   currentFilePath: string | null;
   editorContent: string;
   saveStatus: SaveStatus;

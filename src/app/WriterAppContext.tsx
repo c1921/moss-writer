@@ -13,7 +13,7 @@ import { useAutosave } from "./hooks/useAutosave";
 import { useFileLoader } from "./hooks/useFileLoader";
 import { useProjectSession } from "./hooks/useProjectSession";
 import { appReducer, initialAppState } from "./reducer";
-import type { AppState, FileEntry, SaveStatus } from "./types";
+import type { AppState, DirectoryEntry, FileEntry, SaveStatus } from "./types";
 import {
   DEFAULT_WEB_DAV_SETTINGS,
   type WebDavSettings,
@@ -24,6 +24,7 @@ import {
   createDirectory as createDirectoryCommand,
   deleteFile as deleteFileCommand,
   getSyncSettings as getSyncSettingsCommand,
+  listDirectories,
   listFiles,
   openProject,
   resolveSyncPending as resolveSyncPendingCommand,
@@ -44,6 +45,7 @@ import type {
 interface WriterProjectStateContextValue {
   projectPath: string | null;
   files: FileEntry[];
+  directories: DirectoryEntry[];
   currentFilePath: string | null;
   isProjectLoading: boolean;
   isFileLoading: boolean;
@@ -141,9 +143,9 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     resolveSyncPending: async () => null,
   });
   const syncActionsRef = useRef<WriterSyncActionsContextValue | null>(null);
-  const syncProjectFilesImplRef = useRef<(changedPaths?: string[]) => Promise<FileEntry[]>>(
-    async () => [],
-  );
+  const syncProjectFilesImplRef = useRef<
+    (changedPaths?: string[]) => Promise<{ files: FileEntry[]; directories: DirectoryEntry[] }>
+  >(async () => ({ files: [], directories: [] }));
   const loadSyncSettingsPromiseRef = useRef<Promise<WebDavSettings> | null>(null);
   const syncRequestPromiseRef = useRef<Promise<SyncResponse | null> | null>(null);
   const lastPushCompletedAtRef = useRef<number | null>(null);
@@ -473,13 +475,16 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
   syncProjectFilesImplRef.current = async (changedPaths = []) => {
     const projectPath = stateRef.current.projectPath;
     if (!projectPath) {
-      return [];
+      return { files: [], directories: [] };
     }
 
     const previousCurrentFilePath = stateRef.current.currentFilePath;
 
     try {
-      const files = await listFiles(projectPath);
+      const [files, directories] = await Promise.all([
+        listFiles(projectPath),
+        listDirectories(projectPath),
+      ]);
       const currentFileStillExists = previousCurrentFilePath
         ? files.some((file) => file.path === previousCurrentFilePath)
         : false;
@@ -493,7 +498,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
         await prepareForExternalReload();
       }
 
-      dispatch({ type: "project/filesUpdated", files });
+      dispatch({ type: "project/filesUpdated", files, directories });
 
       if (previousCurrentFilePath && currentFileStillExists && currentFileWasChanged) {
         await loadFile(previousCurrentFilePath);
@@ -507,10 +512,13 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
         await loadFile(files[0].path);
       }
 
-      return files;
+      return { files, directories };
     } catch (error) {
       dispatch({ type: "error/set", message: toMessage(error) });
-      return stateRef.current.files;
+      return {
+        files: stateRef.current.files,
+        directories: stateRef.current.directories,
+      };
     }
   };
 
@@ -545,6 +553,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
           snapshot = {
             projectPath: snapshot.projectPath,
             files: await listFiles(projectPath),
+            directories: await listDirectories(projectPath),
           };
         }
       }
@@ -619,6 +628,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
     try {
       await createDirectoryCommand(path);
+      await syncProjectFilesImplRef.current();
       markPendingAutoPush();
     } catch (error) {
       dispatch({ type: "error/set", message: toMessage(error) });
@@ -855,6 +865,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     () => ({
       projectPath: state.projectPath,
       files: state.files,
+      directories: state.directories,
       currentFilePath: state.currentFilePath,
       isProjectLoading: state.isProjectLoading,
       isFileLoading: state.isFileLoading,
@@ -862,6 +873,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     [
       state.projectPath,
       state.files,
+      state.directories,
       state.currentFilePath,
       state.isProjectLoading,
       state.isFileLoading,

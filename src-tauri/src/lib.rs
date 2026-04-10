@@ -176,6 +176,7 @@ pub fn run() {
             commands::read_file,
             commands::write_file,
             commands::list_files,
+            commands::list_directories,
             commands::create_file,
             commands::create_directory,
             commands::rename_file,

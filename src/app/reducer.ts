@@ -1,4 +1,4 @@
-import type { AppState, FileEntry, ProjectSnapshot } from "./types";
+import type { AppState, DirectoryEntry, FileEntry, ProjectSnapshot } from "./types";
 
 type AppAction =
   | { type: "app/reset" }
@@ -6,7 +6,7 @@ type AppAction =
   | { type: "error/clear" }
   | { type: "project/openStarted" }
   | { type: "project/opened"; snapshot: ProjectSnapshot }
-  | { type: "project/filesUpdated"; files: FileEntry[] }
+  | { type: "project/filesUpdated"; files: FileEntry[]; directories: DirectoryEntry[] }
   | { type: "project/fileAdded"; file: FileEntry }
   | { type: "project/fileRenamed"; previousPath: string; file: FileEntry }
   | { type: "project/fileDeleted"; path: string }
@@ -28,6 +28,7 @@ function compareFileEntries(left: FileEntry, right: FileEntry) {
 export const initialAppState: AppState = {
   projectPath: null,
   files: [],
+  directories: [],
   currentFilePath: null,
   editorContent: "",
   saveStatus: "idle",
@@ -66,6 +67,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         projectPath: action.snapshot.projectPath,
         files: action.snapshot.files,
+        directories: action.snapshot.directories ?? [],
         currentFilePath: null,
         editorContent: "",
         saveStatus: "idle",
@@ -85,6 +87,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         return {
           ...state,
           files: action.files,
+          directories: action.directories,
           appError: null,
         };
       }
@@ -92,6 +95,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         files: action.files,
+        directories: action.directories,
         currentFilePath: null,
         editorContent: "",
         saveStatus: "idle",

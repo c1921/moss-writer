@@ -27,6 +27,7 @@ describe("EditorPane", () => {
     useWriterProjectStateMock.mockReturnValue({
       projectPath: "/project",
       files: [{ name: "chapter-1.md", path: "drafts/chapter-1.md" }],
+      directories: [{ name: "drafts", path: "drafts" }],
       currentFilePath: "drafts/chapter-1.md",
       isProjectLoading: false,
       isFileLoading: false,
@@ -66,6 +67,7 @@ describe("EditorPane", () => {
     useWriterProjectStateMock.mockReturnValue({
       projectPath: null,
       files: [],
+      directories: [],
       currentFilePath: null,
       isProjectLoading: false,
       isFileLoading: false,

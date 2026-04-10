@@ -13,7 +13,7 @@ use std::{
 use tauri::{AppHandle, Emitter};
 
 use crate::commands::{
-    list_project_files, ProjectFilesChangedEvent, ProjectFilesChangedKind,
+    list_project_directories, list_project_files, ProjectFilesChangedEvent, ProjectFilesChangedKind,
     PROJECT_FILES_CHANGED_EVENT,
 };
 
@@ -222,6 +222,10 @@ fn snapshot_project_files(root: &Path) -> Result<ProjectSnapshot, String> {
 
     for file in list_project_files(root)? {
         snapshot.insert(file.path, file.updated_at);
+    }
+
+    for directory in list_project_directories(root)? {
+        snapshot.insert(directory.path, None);
     }
 
     Ok(snapshot)

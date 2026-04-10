@@ -25,11 +25,19 @@ pub struct FileEntry {
     pub updated_at: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryEntry {
+    pub name: String,
+    pub path: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSnapshot {
     pub project_path: String,
     pub files: Vec<FileEntry>,
+    pub directories: Vec<DirectoryEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -56,12 +64,14 @@ pub fn open_project(
 ) -> AppResult<ProjectSnapshot> {
     let root = canonicalize_directory(&directory)?;
     let files = list_project_files(&root)?;
+    let directories = list_project_directories(&root)?;
 
     state.set_root(root.clone(), app)?;
 
     Ok(ProjectSnapshot {
         project_path: root.to_string_lossy().to_string(),
         files,
+        directories,
     })
 }
 
@@ -87,6 +97,12 @@ pub fn list_files(directory: String) -> AppResult<Vec<FileEntry>> {
 }
 
 #[tauri::command]
+pub fn list_directories(directory: String) -> AppResult<Vec<DirectoryEntry>> {
+    let root = canonicalize_directory(&directory)?;
+    list_project_directories(&root)
+}
+
+#[tauri::command]
 pub fn create_file(path: String, state: State<'_, ProjectState>) -> AppResult<FileEntry> {
     let root = state.get_root()?;
     let file = create_project_file(&root, &path)?;
@@ -97,7 +113,10 @@ pub fn create_file(path: String, state: State<'_, ProjectState>) -> AppResult<Fi
 #[tauri::command]
 pub fn create_directory(path: String, state: State<'_, ProjectState>) -> AppResult<()> {
     let root = state.get_root()?;
-    create_project_directory(&root, &path)
+    let normalized = normalize_project_directory_path(&path)?;
+    create_project_directory(&root, &normalized)?;
+    state.suppress_paths([normalized]);
+    Ok(())
 }
 
 #[tauri::command]
@@ -422,6 +441,54 @@ fn file_entry_from_path(root: &Path, path: &Path) -> AppResult<FileEntry> {
     })
 }
 
+fn directory_entry_from_path(root: &Path, path: &Path) -> AppResult<DirectoryEntry> {
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "无法解析目录名".to_string())?
+        .to_string();
+
+    Ok(DirectoryEntry {
+        name,
+        path: relative_project_path(root, path)?,
+    })
+}
+
+fn collect_project_directories(
+    root: &Path,
+    directory: &Path,
+    directories: &mut Vec<DirectoryEntry>,
+) -> AppResult<()> {
+    let mut entries = fs::read_dir(directory)
+        .map_err(|error| format!("无法读取项目目录：{error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("无法读取目录内容：{error}"))?;
+
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_ascii_lowercase());
+
+    for entry in entries {
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("无法读取目录内容：{error}"))?;
+
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let canonical =
+            fs::canonicalize(&path).map_err(|error| format!("无法读取目录内容：{error}"))?;
+        if !canonical.starts_with(root) {
+            continue;
+        }
+
+        directories.push(directory_entry_from_path(root, &path)?);
+        collect_project_directories(root, &path, directories)?;
+    }
+
+    Ok(())
+}
+
 fn collect_project_files(
     root: &Path,
     directory: &Path,
@@ -471,6 +538,16 @@ pub fn list_project_files(root: &Path) -> AppResult<Vec<FileEntry>> {
     files.sort_by_key(|entry| entry.path.to_ascii_lowercase());
 
     Ok(files)
+}
+
+pub fn list_project_directories(root: &Path) -> AppResult<Vec<DirectoryEntry>> {
+    let root = canonicalize_root(root)?;
+    let mut directories = Vec::new();
+
+    collect_project_directories(&root, &root, &mut directories)?;
+    directories.sort_by_key(|entry| entry.path.to_ascii_lowercase());
+
+    Ok(directories)
 }
 
 pub fn read_project_file(root: &Path, raw_path: &str) -> AppResult<String> {
@@ -567,6 +644,24 @@ mod tests {
         assert_eq!(paths.len(), 2);
         assert!(paths.contains(&"chapter-1.md".to_string()));
         assert!(paths.contains(&"drafts/part-1/chapter-2.md".to_string()));
+    }
+
+    #[test]
+    fn list_project_directories_includes_empty_directories() {
+        let project = TestProject::new();
+        fs::create_dir_all(project.path().join("drafts/empty")).unwrap();
+        fs::create_dir_all(project.path().join("notes")).unwrap();
+        fs::write(project.path().join("drafts/chapter-1.md"), "nested").unwrap();
+
+        let directories = list_project_directories(project.path()).unwrap();
+        let paths = directories
+            .into_iter()
+            .map(|directory| directory.path)
+            .collect::<Vec<_>>();
+
+        assert!(paths.contains(&"drafts".to_string()));
+        assert!(paths.contains(&"drafts/empty".to_string()));
+        assert!(paths.contains(&"notes".to_string()));
     }
 
     #[test]

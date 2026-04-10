@@ -7,6 +7,7 @@ vi.mock("@/shared/tauri/commands", () => ({
   readFile: vi.fn(),
   writeFile: vi.fn(),
   listFiles: vi.fn(),
+  listDirectories: vi.fn(),
   createFile: vi.fn(),
   createDirectory: vi.fn(),
   renameFile: vi.fn(),
@@ -155,6 +156,7 @@ describe("WriterAppProvider", () => {
   const readFileMock = vi.mocked(commands.readFile);
   const writeFileMock = vi.mocked(commands.writeFile);
   const listFilesMock = vi.mocked(commands.listFiles);
+  const listDirectoriesMock = vi.mocked(commands.listDirectories);
   const createFileMock = vi.mocked(commands.createFile);
   const renameFileMock = vi.mocked(commands.renameFile);
   const deleteFileMock = vi.mocked(commands.deleteFile);
@@ -181,6 +183,7 @@ describe("WriterAppProvider", () => {
       autoPushOnSave: true,
       autoPushMinIntervalSeconds: 120,
     });
+    listDirectoriesMock.mockResolvedValue([]);
     listenProjectFilesChangedMock.mockImplementation(async (handler) => {
       projectFilesChangedHandler = handler;
       return unlistenMock;

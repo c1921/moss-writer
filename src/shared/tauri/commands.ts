@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-import type { FileEntry, ProjectSnapshot } from "../../app/types";
+import type { DirectoryEntry, FileEntry, ProjectSnapshot } from "../../app/types";
 import type { WebDavSettings } from "../../features/settings/types";
 import type { SyncResolveStrategy, SyncResponse } from "../../features/sync/types";
 
@@ -22,6 +22,10 @@ export function writeFile(path: string, content: string) {
 
 export function listFiles(directory: string) {
   return command<FileEntry[]>("list_files", { directory });
+}
+
+export function listDirectories(directory: string) {
+  return command<DirectoryEntry[]>("list_directories", { directory });
 }
 
 export function createFile(path: string) {

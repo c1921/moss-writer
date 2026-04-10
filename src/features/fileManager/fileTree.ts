@@ -1,4 +1,4 @@
-import type { FileEntry } from "@/app/types"
+import type { DirectoryEntry, FileEntry } from "@/app/types"
 import { stripMarkdownExtension } from "@/shared/utils/fileNames"
 
 export type FileTreeNode = FileTreeDirectoryNode | FileTreeFileNode
@@ -53,8 +53,29 @@ function finalizeDirectory(directory: MutableDirectoryNode): FileTreeDirectoryNo
   }
 }
 
-export function buildFileTree(files: FileEntry[]): FileTreeNode[] {
+function ensureDirectory(root: MutableDirectoryNode, path: string) {
+  const segments = path.split("/").filter(Boolean)
+  if (segments.length === 0) {
+    return
+  }
+
+  let currentDirectory = root
+  for (const segment of segments) {
+    const nextPath = currentDirectory.path ? `${currentDirectory.path}/${segment}` : segment
+    const existingDirectory =
+      currentDirectory.directories.get(segment) ?? createDirectoryNode(segment, nextPath)
+
+    currentDirectory.directories.set(segment, existingDirectory)
+    currentDirectory = existingDirectory
+  }
+}
+
+export function buildFileTree(files: FileEntry[], directories: DirectoryEntry[] = []): FileTreeNode[] {
   const root = createDirectoryNode("", "")
+
+  for (const directory of directories) {
+    ensureDirectory(root, directory.path)
+  }
 
   for (const file of files) {
     const segments = file.path.split("/").filter(Boolean)
@@ -62,15 +83,12 @@ export function buildFileTree(files: FileEntry[]): FileTreeNode[] {
       continue
     }
 
+    const parentDirectoryPath = segments.slice(0, -1).join("/")
+    ensureDirectory(root, parentDirectoryPath)
+
     let currentDirectory = root
     for (let index = 0; index < segments.length - 1; index += 1) {
-      const segment = segments[index]
-      const nextPath = currentDirectory.path ? `${currentDirectory.path}/${segment}` : segment
-      const existingDirectory =
-        currentDirectory.directories.get(segment) ?? createDirectoryNode(segment, nextPath)
-
-      currentDirectory.directories.set(segment, existingDirectory)
-      currentDirectory = existingDirectory
+      currentDirectory = currentDirectory.directories.get(segments[index])!
     }
 
     currentDirectory.files.push({

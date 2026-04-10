@@ -75,6 +75,7 @@ describe("SettingsDialog", () => {
     useWriterProjectStateMock.mockReturnValue({
       projectPath: "/project",
       files: [],
+      directories: [],
       currentFilePath: null,
       isProjectLoading: false,
       isFileLoading: false,
