@@ -165,7 +165,7 @@ function AppShell() {
   const appError = useWriterAppError();
   const { clearError } = useWriterAppActions();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsDialogTab>("general");
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsDialogTab>("editor");
   const {
     isMiniWindowMode,
     enterMiniWindowMode,

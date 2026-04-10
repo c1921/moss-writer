@@ -322,7 +322,7 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
           <Button
             className="w-full justify-start"
             disabled={actionsDisabled}
-            onClick={() => onOpenSettings("general")}
+            onClick={() => onOpenSettings("editor")}
             size="sm"
             type="button"
             variant="ghost"

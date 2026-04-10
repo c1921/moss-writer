@@ -32,11 +32,11 @@ vi.mock("@/features/fileManager/FileSidebar", () => ({
   FileSidebar: ({
     onOpenSettings,
   }: {
-    onOpenSettings: (tab: "general" | "webdav") => void;
+    onOpenSettings: (tab: "editor" | "webdav") => void;
   }) => (
     <div>
       <div data-testid="file-sidebar">sidebar</div>
-      <button onClick={() => onOpenSettings("general")} type="button">
+      <button onClick={() => onOpenSettings("editor")} type="button">
         sidebar-settings
       </button>
     </div>
@@ -94,7 +94,7 @@ vi.mock("@/features/settings/SettingsDialog", () => ({
     initialTab?: string;
   }) => (
     <div data-testid="settings-dialog">
-      {open ? `open:${initialTab ?? "general"}` : "closed"}
+      {open ? `open:${initialTab ?? "editor"}` : "closed"}
     </div>
   ),
 }));
@@ -144,12 +144,12 @@ describe("App", () => {
     expect(screen.getByTestId("settings-dialog").textContent).toBe("open:webdav");
   });
 
-  it("点击侧边栏设置按钮会打开基础设置", () => {
+  it("点击侧边栏设置按钮会打开编辑器设置", () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "sidebar-settings" }));
 
-    expect(screen.getByTestId("settings-dialog").textContent).toBe("open:general");
+    expect(screen.getByTestId("settings-dialog").textContent).toBe("open:editor");
   });
 
   it("小窗模式下展示紧凑壳层，并支持拖动和退出后打开设置", async () => {

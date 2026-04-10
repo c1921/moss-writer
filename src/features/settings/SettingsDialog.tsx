@@ -47,6 +47,7 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { AppearanceSettings } from "@/app/appearanceSettings"
 import { AppearancePanel } from "@/features/settings/AppearancePanel"
+import { EditorPanel } from "@/features/settings/EditorPanel"
 import type { WebDavSettings } from "@/features/settings/types"
 import type {
   SyncLatestResolutionReason,
@@ -64,10 +65,8 @@ interface SettingsDialogProps {
 }
 
 export type SettingsDialogTab =
-  | "general"
   | "editor"
   | "appearance"
-  | "git"
   | "shortcuts"
   | "about"
   | "webdav"
@@ -279,14 +278,6 @@ function getResolveStrategyDescription(strategy: SyncResolveStrategy) {
   }
 }
 
-function PlaceholderPanel({ title }: { title: string }) {
-  return (
-    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      {title}（即将推出）
-    </div>
-  )
-}
-
 function ShortcutsPanel() {
   return (
     <Card>
@@ -361,7 +352,7 @@ export function SettingsDialog({
   onOpenChange,
   appearance,
   onChangeAppearance,
-  initialTab = "general",
+  initialTab = "editor",
 }: SettingsDialogProps) {
   const projectState = useWriterProjectState()
   const syncState = useWriterSyncState()
@@ -547,12 +538,12 @@ export function SettingsDialog({
   return (
     <>
       <Dialog onOpenChange={onOpenChange} open={open}>
-        <DialogContent className="flex h-[min(38rem,calc(100vh-3rem))] max-w-[min(52rem,calc(100%-1.5rem))] flex-col overflow-hidden p-0 sm:max-w-208">
+        <DialogContent className="flex h-[min(calc((100vw-1.5rem)*0.78),calc(100vh-3rem))] min-h-[24rem] w-[min(72rem,calc(100vw-1.5rem))] max-w-none flex-col overflow-hidden p-0 sm:max-w-none">
           <form className="flex min-h-0 flex-1 flex-col gap-0" onSubmit={handleSubmit}>
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4">
             <DialogTitle>设置</DialogTitle>
             <DialogDescription>
-              配置 WebDAV 连接，并控制打开项目自动拉取，以及本地已落盘改动的自动推送。
+              调整编辑器、外观、同步和应用信息。
             </DialogDescription>
           </DialogHeader>
 
@@ -565,30 +556,23 @@ export function SettingsDialog({
             value={activeTab}
           >
             <TabsList
-              className="h-full w-40 shrink-0 flex-col justify-start gap-1 rounded-none border-none bg-transparent px-2 py-3"
+              className="h-full min-h-0 w-40 shrink-0 flex-col justify-start gap-1 overflow-y-auto rounded-none border-none bg-transparent px-2 py-3 overscroll-contain"
               variant="line"
             >
-              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="general">
-                基本设置
-              </TabsTrigger>
               <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="editor">
                 编辑器
               </TabsTrigger>
               <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="appearance">
                 外观
               </TabsTrigger>
-              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="git">
-                Git
-              </TabsTrigger>
               <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="shortcuts">
                 快捷键
               </TabsTrigger>
-              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="about">
-                关于
-              </TabsTrigger>
-              <Separator className="my-1" />
               <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="webdav">
                 WebDAV
+              </TabsTrigger>
+              <TabsTrigger className="w-full justify-start px-3 py-2 text-sm" value="about">
+                关于
               </TabsTrigger>
             </TabsList>
 
@@ -597,12 +581,8 @@ export function SettingsDialog({
             <div className="min-h-0 flex-1 overflow-hidden">
               <ScrollArea className="h-full">
                 <div className="px-6 py-4">
-                  <TabsContent value="general">
-                    <PlaceholderPanel title="基本设置" />
-                  </TabsContent>
-
                   <TabsContent value="editor">
-                    <PlaceholderPanel title="编辑器" />
+                    <EditorPanel onChangeSettings={onChangeAppearance} settings={appearance} />
                   </TabsContent>
 
                   <TabsContent value="appearance">
@@ -612,16 +592,8 @@ export function SettingsDialog({
                     />
                   </TabsContent>
 
-                  <TabsContent value="git">
-                    <PlaceholderPanel title="Git" />
-                  </TabsContent>
-
                   <TabsContent value="shortcuts">
                     <ShortcutsPanel />
-                  </TabsContent>
-
-                  <TabsContent value="about">
-                    <AboutPanel version={appVersion} versionLoading={isVersionLoading} />
                   </TabsContent>
 
                   <TabsContent className="space-y-4" value="webdav">
@@ -892,6 +864,10 @@ export function SettingsDialog({
                         </AlertDescription>
                       </Alert>
                     ) : null}
+                  </TabsContent>
+
+                  <TabsContent value="about">
+                    <AboutPanel version={appVersion} versionLoading={isVersionLoading} />
                   </TabsContent>
                 </div>
               </ScrollArea>

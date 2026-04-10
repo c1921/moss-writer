@@ -212,6 +212,53 @@ describe("SettingsDialog", () => {
     await waitFor(() => expect(screen.getByText("未知")).not.toBeNull())
   })
 
+  it("只展示有内容的设置页签，并默认落到编辑器页", () => {
+    render(<SettingsDialog appearance={defaultAppearance} onChangeAppearance={vi.fn()} onOpenChange={onOpenChangeMock} open />)
+
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "编辑器",
+      "外观",
+      "快捷键",
+      "WebDAV",
+      "关于",
+    ])
+    expect(screen.queryByRole("tab", { name: "基本设置" })).toBeNull()
+    expect(screen.queryByRole("tab", { name: "Git" })).toBeNull()
+    expect(screen.getByText("主窗口字体大小")).not.toBeNull()
+    expect(screen.queryByText("WebDAV 连接")).toBeNull()
+  })
+
+  it("编辑器页可以切换显示行号，外观页只展示小窗外观项", async () => {
+    const user = userEvent.setup()
+    const onChangeAppearanceMock = vi.fn()
+
+    render(
+      <SettingsDialog
+        appearance={defaultAppearance}
+        onChangeAppearance={onChangeAppearanceMock}
+        onOpenChange={onOpenChangeMock}
+        open
+      />
+    )
+
+    expect(screen.getByText("主窗口字体大小")).not.toBeNull()
+    expect(screen.queryByText("小窗背景不透明度")).toBeNull()
+
+    await user.click(screen.getByRole("switch", { name: "显示行号" }))
+
+    expect(onChangeAppearanceMock).toHaveBeenCalledWith({
+      ...defaultAppearance,
+      showLineNumbers: false,
+    })
+
+    await user.click(screen.getByRole("tab", { name: "外观" }))
+
+    expect(screen.getByText("小窗背景不透明度")).not.toBeNull()
+    expect(screen.getByText("小窗显示状态栏")).not.toBeNull()
+    expect(screen.queryByText("主窗口字体大小")).toBeNull()
+    expect(screen.queryByText("显示行号")).toBeNull()
+  })
+
   it("在 WebDAV 页保存设置后仍停留在当前标签页", async () => {
     const user = userEvent.setup()
 
@@ -271,25 +318,4 @@ describe("SettingsDialog", () => {
     expect(screen.queryByText("基本设置（即将推出）")).toBeNull()
   })
 
-  it("外观页可以切换显示行号", async () => {
-    const user = userEvent.setup()
-    const onChangeAppearanceMock = vi.fn()
-
-    render(
-      <SettingsDialog
-        appearance={defaultAppearance}
-        onChangeAppearance={onChangeAppearanceMock}
-        onOpenChange={onOpenChangeMock}
-        open
-      />
-    )
-
-    await user.click(screen.getByRole("tab", { name: "外观" }))
-    await user.click(screen.getByRole("switch", { name: "显示行号" }))
-
-    expect(onChangeAppearanceMock).toHaveBeenCalledWith({
-      ...defaultAppearance,
-      showLineNumbers: false,
-    })
-  })
 })
