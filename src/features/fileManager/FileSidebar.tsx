@@ -326,7 +326,9 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
               >
                 <CollapsibleTrigger asChild>
                   <SidebarMenuButton>
-                    <ChevronRight className="size-4 transition-transform group-data-[state=open]/tree-node:rotate-90" />
+                    <ChevronRight
+                      className={cn("size-4 transition-transform", isOpen && "rotate-90")}
+                    />
                     <FolderIcon className="size-4" />
                     <span className="truncate">{node.name}</span>
                   </SidebarMenuButton>
@@ -361,7 +363,9 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
             >
               <CollapsibleTrigger asChild>
                 <SidebarMenuSubButton>
-                  <ChevronRight className="size-3 transition-transform group-data-[state=open]/tree-node:rotate-90" />
+                  <ChevronRight
+                    className={cn("size-3 transition-transform", isOpen && "rotate-90")}
+                  />
                   <FolderIcon className="size-3" />
                   <span className="truncate">{node.name}</span>
                 </SidebarMenuSubButton>

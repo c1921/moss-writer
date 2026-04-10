@@ -323,6 +323,45 @@ describe("FileSidebar", () => {
     expect(directoryInput.value).toBe("未命名(3)")
   })
 
+  it("二级目录展开时箭头会同步旋转", async () => {
+    const user = userEvent.setup()
+
+    useWriterProjectStateMock.mockReturnValue(
+      createProjectState({
+        files: [{ name: "章节.md", path: "卷一/子目录/章节.md" }],
+        directories: [
+          { name: "卷一", path: "卷一" },
+          { name: "子目录", path: "卷一/子目录" },
+        ],
+        currentFilePath: null,
+      }),
+    )
+
+    renderSidebar()
+
+    await user.click(screen.getByText("卷一"))
+
+    const subDirectoryButton = screen
+      .getByText("子目录")
+      .closest('[data-sidebar="menu-sub-button"]') as HTMLElement | null
+    expect(subDirectoryButton).not.toBeNull()
+
+    const subDirectoryChevron = subDirectoryButton?.querySelector("svg") as SVGElement | null
+    expect(subDirectoryChevron).not.toBeNull()
+    expect(subDirectoryChevron?.className.baseVal).not.toContain("rotate-90")
+    expect(screen.queryByText("章节.md")).toBeNull()
+
+    await user.click(screen.getByText("子目录"))
+
+    expect(subDirectoryChevron?.className.baseVal).toContain("rotate-90")
+    expect(screen.getByText("章节.md")).not.toBeNull()
+
+    await user.click(screen.getByText("子目录"))
+
+    expect(subDirectoryChevron?.className.baseVal).not.toContain("rotate-90")
+    expect(screen.queryByText("章节.md")).toBeNull()
+  })
+
   it("右键菜单定位层使用高层级，避免被侧边栏遮挡", () => {
     renderSidebar()
 
