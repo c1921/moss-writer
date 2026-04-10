@@ -60,7 +60,17 @@ interface SettingsDialogProps {
   onOpenChange: (open: boolean) => void
   appearance: AppearanceSettings
   onChangeAppearance: (s: AppearanceSettings) => void
+  initialTab?: SettingsDialogTab
 }
+
+export type SettingsDialogTab =
+  | "general"
+  | "editor"
+  | "appearance"
+  | "git"
+  | "shortcuts"
+  | "about"
+  | "webdav"
 
 function toMessage(error: unknown) {
   if (error instanceof Error) {
@@ -346,14 +356,20 @@ function AboutPanel({
   )
 }
 
-export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppearance }: SettingsDialogProps) {
+export function SettingsDialog({
+  open,
+  onOpenChange,
+  appearance,
+  onChangeAppearance,
+  initialTab = "general",
+}: SettingsDialogProps) {
   const projectState = useWriterProjectState()
   const syncState = useWriterSyncState()
   const syncActions = useWriterSyncActions()
   const [form, setForm] = useState<WebDavSettings>(syncState.settings)
   const [isSaving, setIsSaving] = useState(false)
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState("general")
+  const [activeTab, setActiveTab] = useState<SettingsDialogTab>(initialTab)
   const [resolveStrategy, setResolveStrategy] = useState<SyncResolveStrategy | null>(null)
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const [isVersionLoading, setIsVersionLoading] = useState(false)
@@ -364,9 +380,9 @@ export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppeara
     }
 
     setSaveFeedback(null)
-    setActiveTab("general")
+    setActiveTab(initialTab)
     setResolveStrategy(null)
-  }, [open])
+  }, [open, initialTab])
 
   useEffect(() => {
     if (!open) {
@@ -531,7 +547,7 @@ export function SettingsDialog({ open, onOpenChange, appearance, onChangeAppeara
   return (
     <>
       <Dialog onOpenChange={onOpenChange} open={open}>
-        <DialogContent className="flex h-[min(38rem,calc(100vh-3rem))] max-w-[min(52rem,calc(100%-1.5rem))] flex-col overflow-hidden p-0 sm:max-w-[52rem]">
+        <DialogContent className="flex h-[min(38rem,calc(100vh-3rem))] max-w-[min(52rem,calc(100%-1.5rem))] flex-col overflow-hidden p-0 sm:max-w-208">
           <form className="flex min-h-0 flex-1 flex-col gap-0" onSubmit={handleSubmit}>
           <DialogHeader className="shrink-0 px-6 pt-6 pb-4">
             <DialogTitle>设置</DialogTitle>

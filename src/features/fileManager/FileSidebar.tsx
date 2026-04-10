@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/sidebar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
+import type { SettingsDialogTab } from "@/features/settings/SettingsDialog"
 import {
   buildFileTree,
   getAncestorDirectoryPaths,
@@ -64,7 +65,7 @@ interface DialogState {
 const CLOSED_DIALOG: DialogState = { open: false, mode: "file", initialPath: "" }
 
 interface FileSidebarProps {
-  onOpenSettings: () => void
+  onOpenSettings: (tab: SettingsDialogTab) => void
 }
 
 export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
@@ -321,7 +322,7 @@ export function FileSidebar({ onOpenSettings }: FileSidebarProps) {
           <Button
             className="w-full justify-start"
             disabled={actionsDisabled}
-            onClick={onOpenSettings}
+            onClick={() => onOpenSettings("general")}
             size="sm"
             type="button"
             variant="ghost"

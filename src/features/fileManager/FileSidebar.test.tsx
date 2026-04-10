@@ -53,5 +53,6 @@ describe("FileSidebar", () => {
 
     await user.click(settingsButton)
     expect(onOpenSettings).toHaveBeenCalledTimes(1)
+    expect(onOpenSettings).toHaveBeenCalledWith("general")
   })
 })

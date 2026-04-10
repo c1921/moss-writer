@@ -16,7 +16,10 @@ import { EditorCurrentFileName } from "@/features/editor/EditorCurrentFileName";
 import { EditorPane } from "@/features/editor/EditorPane";
 import { EditorSaveStatusBadge } from "@/features/editor/EditorSaveStatusBadge";
 import { FileSidebar } from "@/features/fileManager/FileSidebar";
-import { SettingsDialog } from "@/features/settings/SettingsDialog";
+import {
+  SettingsDialog,
+  type SettingsDialogTab,
+} from "@/features/settings/SettingsDialog";
 import { SyncStatusButton } from "@/features/sync/SyncStatusButton";
 
 function isInteractiveTarget(target: HTMLElement | null) {
@@ -31,7 +34,7 @@ interface StandardWorkspaceProps {
   appError: string | null;
   clearError: () => void;
   onEnterMiniWindowMode: () => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (tab: SettingsDialogTab) => void;
   mainEditorFontSizePx: number;
 }
 
@@ -56,7 +59,7 @@ function StandardWorkspace({
               <Minimize2 className="size-4" />
               小窗
             </Button>
-            <SyncStatusButton onClick={onOpenSettings} />
+            <SyncStatusButton onClick={() => onOpenSettings("webdav")} />
             <EditorSaveStatusBadge className="shrink-0" />
           </header>
           {appError ? (
@@ -85,7 +88,7 @@ function StandardWorkspace({
 
 interface MiniWindowWorkspaceProps {
   onExitMiniWindowMode: () => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (tab: SettingsDialogTab) => void;
   onStartDragging: () => void;
   appearance: AppearanceSettings;
 }
@@ -124,7 +127,7 @@ function MiniWindowWorkspace({
           <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
             {appearance.miniWindowShowStatusBar && (
               <>
-                <SyncStatusButton compact onClick={onOpenSettings} />
+                <SyncStatusButton compact onClick={() => onOpenSettings("webdav")} />
                 <EditorSaveStatusBadge
                   className="shrink-0"
                   compact
@@ -156,6 +159,7 @@ function AppShell() {
   const appError = useWriterAppError();
   const { clearError } = useWriterAppActions();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsDialogTab>("general");
   const {
     isMiniWindowMode,
     enterMiniWindowMode,
@@ -169,11 +173,12 @@ function AppShell() {
     await enterMiniWindowMode();
   }
 
-  async function handleOpenSettings() {
+  async function handleOpenSettings(tab: SettingsDialogTab) {
     if (isMiniWindowMode) {
       await exitMiniWindowMode();
     }
 
+    setSettingsInitialTab(tab);
     setSettingsOpen(true);
   }
 
@@ -183,7 +188,7 @@ function AppShell() {
         <MiniWindowWorkspace
           appearance={appearance}
           onExitMiniWindowMode={() => void exitMiniWindowMode()}
-          onOpenSettings={() => void handleOpenSettings()}
+          onOpenSettings={(tab) => void handleOpenSettings(tab)}
           onStartDragging={() => void startWindowDragging()}
         />
       ) : (
@@ -192,11 +197,12 @@ function AppShell() {
           clearError={clearError}
           mainEditorFontSizePx={appearance.mainEditorFontSize}
           onEnterMiniWindowMode={() => void handleEnterMiniWindowMode()}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={(tab) => void handleOpenSettings(tab)}
         />
       )}
       <SettingsDialog
         appearance={appearance}
+        initialTab={settingsInitialTab}
         onChangeAppearance={updateAppearance}
         onOpenChange={setSettingsOpen}
         open={settingsOpen}

@@ -29,7 +29,18 @@ vi.mock("@/components/ui/sidebar", () => ({
 }));
 
 vi.mock("@/features/fileManager/FileSidebar", () => ({
-  FileSidebar: () => <div data-testid="file-sidebar">sidebar</div>,
+  FileSidebar: ({
+    onOpenSettings,
+  }: {
+    onOpenSettings: (tab: "general" | "webdav") => void;
+  }) => (
+    <div>
+      <div data-testid="file-sidebar">sidebar</div>
+      <button onClick={() => onOpenSettings("general")} type="button">
+        sidebar-settings
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("@/features/editor/EditorCurrentFileName", () => ({
@@ -75,8 +86,16 @@ vi.mock("@/features/sync/SyncStatusButton", () => ({
 }));
 
 vi.mock("@/features/settings/SettingsDialog", () => ({
-  SettingsDialog: ({ open }: { open: boolean }) => (
-    <div data-testid="settings-dialog">{open ? "open" : "closed"}</div>
+  SettingsDialog: ({
+    open,
+    initialTab,
+  }: {
+    open: boolean;
+    initialTab?: string;
+  }) => (
+    <div data-testid="settings-dialog">
+      {open ? `open:${initialTab ?? "general"}` : "closed"}
+    </div>
   ),
 }));
 
@@ -122,7 +141,15 @@ describe("App", () => {
 
     fireEvent.click(screen.getByTestId("sync-status-standard"));
 
-    expect(screen.getByTestId("settings-dialog").textContent).toBe("open");
+    expect(screen.getByTestId("settings-dialog").textContent).toBe("open:webdav");
+  });
+
+  it("点击侧边栏设置按钮会打开基础设置", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "sidebar-settings" }));
+
+    expect(screen.getByTestId("settings-dialog").textContent).toBe("open:general");
   });
 
   it("小窗模式下展示紧凑壳层，并支持拖动和退出后打开设置", async () => {
@@ -147,7 +174,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(exitMiniWindowModeMock).toHaveBeenCalledTimes(1);
-      expect(screen.getByTestId("settings-dialog").textContent).toBe("open");
+      expect(screen.getByTestId("settings-dialog").textContent).toBe("open:webdav");
     });
 
     fireEvent.click(screen.getByRole("button", { name: "退出小窗模式" }));
