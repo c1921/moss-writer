@@ -142,6 +142,28 @@ pub fn delete_file(path: String, state: State<'_, ProjectState>) -> AppResult<()
 }
 
 #[tauri::command]
+pub fn rename_directory(
+    path: String,
+    new_name: String,
+    state: State<'_, ProjectState>,
+) -> AppResult<()> {
+    let root = state.get_root()?;
+    let normalized_previous_path = normalize_project_directory_path(&path)?;
+    let renamed_path = rename_project_directory(&root, &normalized_previous_path, &new_name)?;
+    state.suppress_paths([normalized_previous_path, renamed_path]);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_directory(path: String, state: State<'_, ProjectState>) -> AppResult<()> {
+    let root = state.get_root()?;
+    let normalized = normalize_project_directory_path(&path)?;
+    delete_project_directory(&root, &normalized)?;
+    state.suppress_paths([normalized]);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_sync_settings(app: AppHandle) -> AppResult<SyncSettings> {
     sync::load_sync_settings(&app)
 }
@@ -286,6 +308,20 @@ fn normalize_project_directory_path(input: &str) -> AppResult<String> {
     Ok(segments.join("/"))
 }
 
+fn normalize_project_path_name(input: &str) -> AppResult<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Err("路径名称不能为空".to_string());
+    }
+
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        return Err("路径名称不能包含目录分隔符".to_string());
+    }
+
+    validate_path_segment(trimmed, false)?;
+    Ok(trimmed.to_string())
+}
+
 fn validate_path_segment(segment: &str, is_last_segment: bool) -> AppResult<()> {
     if segment == "." || segment == ".." {
         return Err("文件路径不能包含 . 或 ..".to_string());
@@ -418,6 +454,22 @@ fn resolve_new_project_file(root: &Path, raw_path: &str) -> AppResult<(String, P
     }
 
     Ok((normalized, candidate))
+}
+
+fn resolve_existing_project_directory(root: &Path, raw_path: &str) -> AppResult<(String, PathBuf)> {
+    let root = canonicalize_root(root)?;
+    let normalized = normalize_project_directory_path(raw_path)?;
+    let candidate = root.join(Path::new(&normalized));
+    let canonical =
+        fs::canonicalize(&candidate).map_err(|error| format!("目录不存在或不可访问：{error}"))?;
+
+    ensure_within_root(&root, &canonical)?;
+
+    if !canonical.is_dir() {
+        return Err("目标不是目录".to_string());
+    }
+
+    Ok((normalized, canonical))
 }
 
 fn file_entry_from_path(root: &Path, path: &Path) -> AppResult<FileEntry> {
@@ -597,6 +649,39 @@ pub fn delete_project_file(root: &Path, raw_path: &str) -> AppResult<()> {
     fs::remove_file(file_path).map_err(|error| format!("删除文件失败：{error}"))
 }
 
+pub fn rename_project_directory(root: &Path, raw_path: &str, new_name: &str) -> AppResult<String> {
+    let (normalized_source_path, source_path) = resolve_existing_project_directory(root, raw_path)?;
+    let normalized_name = normalize_project_path_name(new_name)?;
+    let parent_path = source_path
+        .parent()
+        .ok_or_else(|| "目录路径不合法".to_string())?;
+
+    let target_path = parent_path.join(&normalized_name);
+    if target_path.exists() {
+        return Err("目标目录已存在".to_string());
+    }
+
+    fs::rename(&source_path, &target_path).map_err(|error| format!("重命名目录失败：{error}"))?;
+
+    let parent_relative = Path::new(&normalized_source_path)
+        .parent()
+        .and_then(|value| value.to_str())
+        .map(|value| value.replace('\\', "/"))
+        .filter(|value| !value.is_empty());
+
+    let renamed_path = match parent_relative {
+        Some(parent) => format!("{parent}/{normalized_name}"),
+        None => normalized_name,
+    };
+
+    Ok(renamed_path)
+}
+
+pub fn delete_project_directory(root: &Path, raw_path: &str) -> AppResult<()> {
+    let (_, directory_path) = resolve_existing_project_directory(root, raw_path)?;
+    fs::remove_dir_all(directory_path).map_err(|error| format!("删除目录失败：{error}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -708,5 +793,42 @@ mod tests {
 
         delete_project_file(project.path(), "published/chapter-1-final.md").unwrap();
         assert!(!project.path().join("published/chapter-1-final.md").exists());
+    }
+
+    #[test]
+    fn nested_project_directory_operations_succeed() {
+        let project = TestProject::new();
+        fs::create_dir_all(project.path().join("drafts/part-1")).unwrap();
+        fs::write(project.path().join("drafts/part-1/chapter-1.md"), "hello").unwrap();
+
+        let renamed = rename_project_directory(project.path(), "drafts/part-1", "part-a").unwrap();
+        assert_eq!(renamed, "drafts/part-a");
+        assert!(project.path().join("drafts/part-a/chapter-1.md").exists());
+
+        delete_project_directory(project.path(), "drafts").unwrap();
+        assert!(!project.path().join("drafts").exists());
+    }
+
+    #[test]
+    fn rename_project_directory_rejects_nested_target_name() {
+        let project = TestProject::new();
+        fs::create_dir_all(project.path().join("drafts/part-1")).unwrap();
+
+        let error =
+            rename_project_directory(project.path(), "drafts/part-1", "published/part-a")
+                .unwrap_err();
+
+        assert!(error.contains("目录分隔符"));
+    }
+
+    #[test]
+    fn delete_project_directory_rejects_file_path() {
+        let project = TestProject::new();
+        fs::create_dir_all(project.path().join("drafts")).unwrap();
+        fs::write(project.path().join("drafts/chapter-1.md"), "hello").unwrap();
+
+        let error = delete_project_directory(project.path(), "drafts/chapter-1.md").unwrap_err();
+
+        assert!(error.contains("目标不是目录"));
     }
 }

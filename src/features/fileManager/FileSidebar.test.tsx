@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -28,6 +28,8 @@ describe("FileSidebar", () => {
   const selectFileMock = vi.fn()
   const createFileMock = vi.fn(async () => {})
   const createDirectoryMock = vi.fn(async () => {})
+  const renameDirectoryMock = vi.fn(async () => {})
+  const deleteDirectoryMock = vi.fn(async () => {})
   const renameFileMock = vi.fn()
   const deleteFileMock = vi.fn()
   const updateEditorContentMock = vi.fn()
@@ -65,6 +67,8 @@ describe("FileSidebar", () => {
       selectFile: selectFileMock,
       createFile: createFileMock,
       createDirectory: createDirectoryMock,
+      renameDirectory: renameDirectoryMock,
+      deleteDirectory: deleteDirectoryMock,
       renameFile: renameFileMock,
       deleteFile: deleteFileMock,
       updateEditorContent: updateEditorContentMock,
@@ -317,5 +321,125 @@ describe("FileSidebar", () => {
     await user.click(screen.getByRole("tab", { name: "文件夹" }))
     const directoryInput = screen.getByLabelText("文件夹名称") as HTMLInputElement
     expect(directoryInput.value).toBe("未命名(3)")
+  })
+
+  it("右键菜单定位层使用高层级，避免被侧边栏遮挡", () => {
+    renderSidebar()
+
+    fireEvent.contextMenu(screen.getByText("first.md"))
+
+    const positioner = document.querySelector(
+      '[data-slot="context-menu-positioner"]',
+    ) as HTMLElement | null
+
+    expect(positioner).not.toBeNull()
+    expect(positioner?.className).toContain("z-50")
+    expect(positioner?.className).toContain("isolate")
+  })
+
+  it("右键文件可重命名并保留原父目录", async () => {
+    const user = userEvent.setup()
+
+    useWriterProjectStateMock.mockReturnValue(
+      createProjectState({
+        files: [{ name: "first.md", path: "卷一/first.md" }],
+        directories: [{ name: "卷一", path: "卷一" }],
+        currentFilePath: "卷一/first.md",
+      }),
+    )
+
+    renderSidebar()
+
+    fireEvent.contextMenu(screen.getByText("first.md"))
+
+    await user.click(screen.getByText("重命名"))
+
+    const input = screen.getByLabelText("章节名称") as HTMLInputElement
+    expect(input.value).toBe("first")
+
+    await user.clear(input)
+    await user.type(input, "final")
+    await user.click(screen.getByRole("button", { name: "确认重命名" }))
+
+    await waitFor(() => {
+      expect(renameFileMock).toHaveBeenCalledWith("卷一/first.md", "卷一/final")
+    })
+  })
+
+  it("右键文件夹可重命名", async () => {
+    const user = userEvent.setup()
+
+    useWriterProjectStateMock.mockReturnValue(
+      createProjectState({
+        files: [{ name: "first.md", path: "卷一/first.md" }],
+        directories: [{ name: "卷一", path: "卷一" }],
+        currentFilePath: "卷一/first.md",
+      }),
+    )
+
+    renderSidebar()
+
+    fireEvent.contextMenu(screen.getByText("卷一"))
+
+    await user.click(screen.getByText("重命名"))
+
+    const input = screen.getByLabelText("文件夹名称") as HTMLInputElement
+    expect(input.value).toBe("卷一")
+
+    await user.clear(input)
+    await user.type(input, "第一卷")
+    await user.click(screen.getByRole("button", { name: "确认重命名" }))
+
+    await waitFor(() => {
+      expect(renameDirectoryMock).toHaveBeenCalledWith("卷一", "第一卷")
+    })
+  })
+
+  it("右键文件可弹出删除确认并执行删除", async () => {
+    const user = userEvent.setup()
+
+    renderSidebar()
+
+    fireEvent.contextMenu(screen.getByText("first.md"))
+
+    await user.click(screen.getByText("删除"))
+
+    expect(screen.getByText("删除章节")).not.toBeNull()
+    expect(screen.getByText("将删除 first.md，此操作不可恢复。")).not.toBeNull()
+
+    await user.click(screen.getByRole("button", { name: "确认删除" }))
+
+    await waitFor(() => {
+      expect(deleteFileMock).toHaveBeenCalledWith("first.md")
+    })
+  })
+
+  it("右键文件夹删除时提示递归删除并执行目录删除", async () => {
+    const user = userEvent.setup()
+
+    useWriterProjectStateMock.mockReturnValue(
+      createProjectState({
+        files: [{ name: "first.md", path: "卷一/first.md" }],
+        directories: [{ name: "卷一", path: "卷一" }],
+        currentFilePath: "卷一/first.md",
+      }),
+    )
+
+    renderSidebar()
+
+    fireEvent.contextMenu(screen.getByText("卷一"))
+
+    await user.click(screen.getByText("删除"))
+
+    expect(screen.getByText("删除文件夹")).not.toBeNull()
+    expect(
+      screen.getByText("将递归删除 卷一 及其下所有子文件夹和章节，此操作不可恢复。"),
+    ).not.toBeNull()
+
+    await user.click(screen.getByRole("button", { name: "确认删除" }))
+
+    await waitFor(() => {
+      expect(deleteDirectoryMock).toHaveBeenCalledWith("卷一")
+    })
   })
 })

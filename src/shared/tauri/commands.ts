@@ -44,6 +44,14 @@ export function deleteFile(path: string) {
   return command<void>("delete_file", { path });
 }
 
+export function renameDirectory(path: string, newName: string) {
+  return command<void>("rename_directory", { path, newName });
+}
+
+export function deleteDirectory(path: string) {
+  return command<void>("delete_directory", { path });
+}
+
 export function getSyncSettings() {
   return command<WebDavSettings>("get_sync_settings");
 }

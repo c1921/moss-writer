@@ -22,11 +22,13 @@ import { pickProjectDirectory } from "../shared/tauri/dialog";
 import {
   createFile as createFileCommand,
   createDirectory as createDirectoryCommand,
+  deleteDirectory as deleteDirectoryCommand,
   deleteFile as deleteFileCommand,
   getSyncSettings as getSyncSettingsCommand,
   listDirectories,
   listFiles,
   openProject,
+  renameDirectory as renameDirectoryCommand,
   resolveSyncPending as resolveSyncPendingCommand,
   renameFile as renameFileCommand,
   saveSyncSettings as saveSyncSettingsCommand,
@@ -65,6 +67,8 @@ interface WriterAppActionsContextValue {
   selectFile: (path: string) => Promise<void>;
   createFile: (name: string) => Promise<void>;
   createDirectory: (path: string) => Promise<void>;
+  renameDirectory: (path: string, newName: string) => Promise<void>;
+  deleteDirectory: (path: string) => Promise<void>;
   renameFile: (path: string, newName: string) => Promise<void>;
   deleteFile: (path: string) => Promise<void>;
   updateEditorContent: (content: string) => void;
@@ -105,6 +109,36 @@ function toMessage(error: unknown) {
   return "发生了未知错误";
 }
 
+function getParentPath(path: string) {
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length <= 1) {
+    return "";
+  }
+
+  return segments.slice(0, -1).join("/");
+}
+
+function isPathWithinDirectory(path: string, directoryPath: string) {
+  return path === directoryPath || path.startsWith(`${directoryPath}/`);
+}
+
+function renameWithinParentPath(path: string, newName: string) {
+  const parentPath = getParentPath(path);
+  return parentPath ? `${parentPath}/${newName}` : newName;
+}
+
+function remapNestedPath(path: string, previousPrefix: string, nextPrefix: string) {
+  if (path === previousPrefix) {
+    return nextPrefix;
+  }
+
+  if (!path.startsWith(`${previousPrefix}/`)) {
+    return path;
+  }
+
+  return `${nextPrefix}${path.slice(previousPrefix.length)}`;
+}
+
 export function WriterAppProvider({ children }: PropsWithChildren) {
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const [syncSettings, setSyncSettings] = useState<WebDavSettings>(DEFAULT_WEB_DAV_SETTINGS);
@@ -126,6 +160,8 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     selectFile: async () => {},
     createFile: async () => {},
     createDirectory: async () => {},
+    renameDirectory: async () => {},
+    deleteDirectory: async () => {},
     renameFile: async () => {},
     deleteFile: async () => {},
     updateEditorContent: () => {},
@@ -144,7 +180,10 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
   });
   const syncActionsRef = useRef<WriterSyncActionsContextValue | null>(null);
   const syncProjectFilesImplRef = useRef<
-    (changedPaths?: string[]) => Promise<{ files: FileEntry[]; directories: DirectoryEntry[] }>
+    (options?: {
+      changedPaths?: string[];
+      preferredFilePath?: string | null;
+    }) => Promise<{ files: FileEntry[]; directories: DirectoryEntry[] }>
   >(async () => ({ files: [], directories: [] }));
   const loadSyncSettingsPromiseRef = useRef<Promise<WebDavSettings> | null>(null);
   const syncRequestPromiseRef = useRef<Promise<SyncResponse | null> | null>(null);
@@ -390,7 +429,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
           refreshLocalChanges &&
           (response.changedPaths.length > 0 || response.changedDirectories.length > 0)
         ) {
-          await syncProjectFilesImplRef.current(response.changedPaths);
+          await syncProjectFilesImplRef.current({ changedPaths: response.changedPaths });
         }
 
         return response;
@@ -472,12 +511,13 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     return pending;
   }
 
-  syncProjectFilesImplRef.current = async (changedPaths = []) => {
+  syncProjectFilesImplRef.current = async (options = {}) => {
     const projectPath = stateRef.current.projectPath;
     if (!projectPath) {
       return { files: [], directories: [] };
     }
 
+    const { changedPaths = [], preferredFilePath = null } = options;
     const previousCurrentFilePath = stateRef.current.currentFilePath;
 
     try {
@@ -500,7 +540,9 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
 
       dispatch({ type: "project/filesUpdated", files, directories });
 
-      if (previousCurrentFilePath && currentFileStillExists && currentFileWasChanged) {
+      if (preferredFilePath && files.some((file) => file.path === preferredFilePath)) {
+        await loadFile(preferredFilePath);
+      } else if (previousCurrentFilePath && currentFileStillExists && currentFileWasChanged) {
         await loadFile(previousCurrentFilePath);
       } else if (
         previousCurrentFilePath &&
@@ -635,6 +677,58 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
     }
   };
 
+  actionsImplRef.current.renameDirectory = async (path, newName) => {
+    if (!stateRef.current.projectPath) {
+      return;
+    }
+
+    const currentFilePath = stateRef.current.currentFilePath;
+    const nextDirectoryPath = renameWithinParentPath(path, newName);
+    const nextCurrentFilePath =
+      currentFilePath && isPathWithinDirectory(currentFilePath, path)
+        ? remapNestedPath(currentFilePath, path, nextDirectoryPath)
+        : null;
+
+    if (nextCurrentFilePath) {
+      const canContinue = await flushPendingSave();
+      if (!canContinue) {
+        return;
+      }
+    }
+
+    try {
+      await renameDirectoryCommand(path, newName);
+      await syncProjectFilesImplRef.current({ preferredFilePath: nextCurrentFilePath });
+      markPendingAutoPush();
+    } catch (error) {
+      dispatch({ type: "error/set", message: toMessage(error) });
+    }
+  };
+
+  actionsImplRef.current.deleteDirectory = async (path) => {
+    if (!stateRef.current.projectPath) {
+      return;
+    }
+
+    const currentFilePath = stateRef.current.currentFilePath;
+    const deletingCurrentFile = currentFilePath ? isPathWithinDirectory(currentFilePath, path) : false;
+
+    if (deletingCurrentFile) {
+      const canContinue = await flushPendingSave();
+      if (!canContinue) {
+        return;
+      }
+    }
+
+    try {
+      await deleteDirectoryCommand(path);
+      await syncProjectFilesImplRef.current();
+      markPendingAutoPush();
+    } catch (error) {
+      dispatch({ type: "error/set", message: toMessage(error) });
+    }
+  };
+
   actionsImplRef.current.renameFile = async (path, newName) => {
     const renamingCurrentFile = stateRef.current.currentFilePath === path;
 
@@ -688,7 +782,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
   };
 
   actionsImplRef.current.refreshProjectFiles = async (changedPaths = []) => {
-    await syncProjectFilesImplRef.current(changedPaths);
+    await syncProjectFilesImplRef.current({ changedPaths });
   };
 
   actionsImplRef.current.clearError = () => {
@@ -744,6 +838,8 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
       selectFile: (path) => actionsImplRef.current.selectFile(path),
       createFile: (name) => actionsImplRef.current.createFile(name),
       createDirectory: (path) => actionsImplRef.current.createDirectory(path),
+      renameDirectory: (path, newName) => actionsImplRef.current.renameDirectory(path, newName),
+      deleteDirectory: (path) => actionsImplRef.current.deleteDirectory(path),
       renameFile: (path, newName) => actionsImplRef.current.renameFile(path, newName),
       deleteFile: (path) => actionsImplRef.current.deleteFile(path),
       updateEditorContent: (content) => actionsImplRef.current.updateEditorContent(content),
@@ -832,7 +928,7 @@ export function WriterAppProvider({ children }: PropsWithChildren) {
           markPendingAutoPush();
         }
 
-        void syncProjectFilesImplRef.current(changedPaths);
+        void syncProjectFilesImplRef.current({ changedPaths });
       }, 200);
     })
       .then((nextUnlisten) => {

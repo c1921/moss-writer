@@ -12,6 +12,8 @@ vi.mock("@/shared/tauri/commands", () => ({
   createDirectory: vi.fn(),
   renameFile: vi.fn(),
   deleteFile: vi.fn(),
+  renameDirectory: vi.fn(),
+  deleteDirectory: vi.fn(),
   getSyncSettings: vi.fn(),
   saveSyncSettings: vi.fn(),
   testSyncConnection: vi.fn(),
@@ -88,6 +90,12 @@ function TestHarness() {
       <button onClick={() => void actions.createFile("drafts/chapter-2")} type="button">
         create-file
       </button>
+      <button onClick={() => void actions.renameDirectory("drafts", "published")} type="button">
+        rename-directory
+      </button>
+      <button onClick={() => void actions.deleteDirectory("published")} type="button">
+        delete-directory
+      </button>
       <button
         onClick={() => void actions.renameFile("drafts/chapter-2.md", "published/final")}
         type="button"
@@ -160,6 +168,8 @@ describe("WriterAppProvider", () => {
   const createFileMock = vi.mocked(commands.createFile);
   const renameFileMock = vi.mocked(commands.renameFile);
   const deleteFileMock = vi.mocked(commands.deleteFile);
+  const renameDirectoryMock = vi.mocked(commands.renameDirectory);
+  const deleteDirectoryMock = vi.mocked(commands.deleteDirectory);
   const getSyncSettingsMock = vi.mocked(commands.getSyncSettings);
   const syncPushMock = vi.mocked(commands.syncPush);
   const syncPullMock = vi.mocked(commands.syncPull);
@@ -335,6 +345,87 @@ describe("WriterAppProvider", () => {
     );
     expect(screen.getByTestId("files").textContent).toBe("drafts/chapter-1.md");
     expect(listFilesMock).not.toHaveBeenCalled();
+  });
+
+  it("重命名目录时会刷新列表并保持当前打开文件映射到新路径", async () => {
+    const user = userEvent.setup();
+
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [{ name: "chapter-1.md", path: "drafts/chapter-1.md" }],
+      directories: [{ name: "drafts", path: "drafts" }],
+    });
+    readFileMock.mockImplementation(async (path) => {
+      if (path === "drafts/chapter-1.md" || path === "published/chapter-1.md") {
+        return "chapter 1";
+      }
+
+      throw new Error(`unexpected path: ${path}`);
+    });
+    listFilesMock.mockResolvedValue([{ name: "chapter-1.md", path: "published/chapter-1.md" }]);
+    listDirectoriesMock
+      .mockResolvedValueOnce([{ name: "drafts", path: "drafts" }])
+      .mockResolvedValueOnce([{ name: "published", path: "published" }]);
+    renameDirectoryMock.mockResolvedValue();
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("current-file").textContent).toBe("drafts/chapter-1.md"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "rename-directory" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("current-file").textContent).toBe("published/chapter-1.md"),
+    );
+    expect(screen.getByTestId("files").textContent).toBe("published/chapter-1.md");
+    expect(renameDirectoryMock).toHaveBeenCalledWith("drafts", "published");
+    expect(listFilesMock).toHaveBeenCalledWith("/project");
+  });
+
+  it("删除目录时若包含当前文件会刷新列表并回退到首个剩余文件", async () => {
+    const user = userEvent.setup();
+
+    openProjectMock.mockResolvedValue({
+      projectPath: "/project",
+      files: [
+        { name: "chapter-1.md", path: "published/chapter-1.md" },
+        { name: "epilogue.md", path: "epilogue.md" },
+      ],
+      directories: [{ name: "published", path: "published" }],
+    });
+    readFileMock.mockImplementation(async (path) => {
+      if (path === "published/chapter-1.md") {
+        return "chapter 1";
+      }
+
+      if (path === "epilogue.md") {
+        return "epilogue";
+      }
+
+      throw new Error(`unexpected path: ${path}`);
+    });
+    deleteDirectoryMock.mockResolvedValue();
+    listFilesMock.mockResolvedValue([{ name: "epilogue.md", path: "epilogue.md" }]);
+    listDirectoriesMock
+      .mockResolvedValueOnce([{ name: "published", path: "published" }])
+      .mockResolvedValueOnce([]);
+
+    renderHarness();
+
+    await user.click(screen.getByRole("button", { name: "open-project" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("current-file").textContent).toBe("published/chapter-1.md"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "delete-directory" }));
+
+    await waitFor(() => expect(screen.getByTestId("current-file").textContent).toBe("epilogue.md"));
+    expect(screen.getByTestId("files").textContent).toBe("epilogue.md");
+    expect(deleteDirectoryMock).toHaveBeenCalledWith("published");
+    expect(listFilesMock).toHaveBeenCalledWith("/project");
   });
 
   it("恢复会话时在目标文件不存在时回退到首个文件", async () => {

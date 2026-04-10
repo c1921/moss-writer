@@ -181,6 +181,8 @@ pub fn run() {
             commands::create_directory,
             commands::rename_file,
             commands::delete_file,
+            commands::rename_directory,
+            commands::delete_directory,
             commands::get_sync_settings,
             commands::save_sync_settings,
             commands::test_sync_connection,
