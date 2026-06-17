@@ -3,6 +3,8 @@
 
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@milkdown/theme-nord/style.css";
+@import "@milkdown/kit/prose/view/style/prosemirror.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -121,4 +123,18 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Milkdown nord 主题的 .dark 类适配（nord 原本只响应 prefers-color-scheme） */
+.dark .milkdown-theme-nord.prose tr {
+  border-color: var(--color-gray-600);
+}
+.dark .milkdown-theme-nord.prose :where(td, th):nth-child(odd) {
+  background-color: var(--color-gray-900);
+}
+.dark .milkdown-theme-nord pre {
+  background-color: var(--color-gray-800);
+}
+.dark .milkdown-theme-nord code {
+  background-color: var(--color-gray-700);
 }

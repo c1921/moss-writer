@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { MdEditor } from 'md-editor-v3'
-import 'md-editor-v3/lib/style.css'
+import { MilkdownProvider } from '@milkdown/vue'
 import type { Note } from '@/api/notes'
 import { Input } from '@/components/ui/input'
+import MarkdownEditor from './MarkdownEditor.vue'
 
 const props = defineProps<{
   note: Note | null
@@ -97,20 +97,12 @@ defineExpose({ saveNow })
         >已保存</span>
       </div>
       <div class="flex-1 overflow-hidden">
-        <MdEditor
-          v-model="content"
-          language="en-US"
-          :preview="true"
-          :toolbars="[
-            'bold', 'italic', 'strikeThrough', '-',
-            'title', '-',
-            'unorderedList', 'orderedList', 'code', 'quote', '-',
-            'table', 'link', 'image', '-',
-            'preview',
-          ]"
-          class="h-full"
-          @onChange="onContentChange"
-        />
+        <MilkdownProvider>
+          <MarkdownEditor
+            :model-value="content"
+            @update:model-value="onContentChange"
+          />
+        </MilkdownProvider>
       </div>
     </template>
   </div>

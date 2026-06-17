@@ -9,13 +9,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@milkdown/kit": "^7.21.2",
+    "@milkdown/theme-nord": "^7.21.2",
+    "@milkdown/vue": "^7.21.2",
     "@tabler/icons-vue": "^3.44.0",
     "@tailwindcss/vite": "^4.3.1",
     "@vueuse/core": "^14.3.0",
     "axios": "^1.18.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "md-editor-v3": "^6.5.1",
     "reka-ui": "^2.9.10",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.1",
