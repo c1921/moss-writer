@@ -8,7 +8,7 @@ import { history } from '@milkdown/kit/plugin/history'
 import { clipboard } from '@milkdown/kit/plugin/clipboard'
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
 import { nord } from '@milkdown/theme-nord'
-import { replaceAll } from '@milkdown/kit/utils'
+import { replaceAll, getMarkdown } from '@milkdown/kit/utils'
 
 const props = defineProps<{
   modelValue: string
@@ -39,23 +39,31 @@ const { loading, get } = useEditor((container) => {
     .use(listener)
 })
 
-// 外部内容变化 → 同步到编辑器
+// 外部内容变化 → 同步到编辑器（仅当内容确实不同时才更新，避免回音循环破坏选区）
 watch(
   () => props.modelValue,
   (val) => {
     const editor = get()
     if (!editor) return
+
+    // 与编辑器当前内容比对，相同则跳过
+    const currentMd = editor.action(getMarkdown())
+    if (currentMd === val) return
+
     suppressListener = true
     editor.action(replaceAll(val))
     suppressListener = false
   }
 )
 
-// 编辑器就绪后，推送初始内容
+// 编辑器就绪后，推送初始内容（仅当内容确实不同时）
 watch(loading, (isLoading) => {
   if (!isLoading) {
     const editor = get()
     if (editor && props.modelValue !== undefined) {
+      const currentMd = editor.action(getMarkdown())
+      if (currentMd === props.modelValue) return
+
       suppressListener = true
       editor.action(replaceAll(props.modelValue))
       suppressListener = false
