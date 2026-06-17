@@ -11,8 +11,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// DB 是包级可导出的数据库实例，由 Init 初始化。
-var DB *gorm.DB
+// db 是包级数据库实例，由 Init 初始化。外部通过 DB() 获取。
+var db *gorm.DB
 
 // envOrDefault 返回环境变量值或默认值
 func envOrDefault(key, def string) string {
@@ -32,21 +32,26 @@ func Init() {
 		log.Fatalf("创建数据目录失败: %v", err)
 	}
 
-	DB, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+	db, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
-	if err := DB.AutoMigrate(&models.Note{}); err != nil {
+	if err := db.AutoMigrate(&models.Note{}); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 
 	log.Printf("数据库初始化完成 (%s)", dbPath)
 }
 
+// DB 返回数据库实例。
+func DB() *gorm.DB {
+	return db
+}
+
 // Close 关闭底层 SQLite 连接。
 func Close() {
-	sqlDB, err := DB.DB()
+	sqlDB, err := db.DB()
 	if err != nil {
 		log.Printf("获取数据库实例失败: %v", err)
 		return

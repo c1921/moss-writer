@@ -10,8 +10,8 @@ import (
 	"github.com/olahol/melody"
 )
 
-// Hub 是包级 WebSocket 管理器实例，由 Init 初始化。
-var Hub *melody.Melody
+// hub 是包级 WebSocket 管理器实例，由 Init 初始化。
+var hub *melody.Melody
 
 // WsMessage WebSocket 消息结构（与前端协议对齐）。
 type WsMessage struct {
@@ -22,13 +22,13 @@ type WsMessage struct {
 
 // Init 初始化 Melody WebSocket 管理器。
 func Init() {
-	Hub = melody.New()
-	Hub.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+	hub = melody.New()
+	hub.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 
-	Hub.HandleConnect(func(s *melody.Session) {
+	hub.HandleConnect(func(s *melody.Session) {
 		log.Printf("WebSocket 客户端连接: %s", s.RemoteAddr())
 	})
-	Hub.HandleDisconnect(func(s *melody.Session) {
+	hub.HandleDisconnect(func(s *melody.Session) {
 		log.Printf("WebSocket 客户端断开: %s", s.RemoteAddr())
 	})
 }
@@ -40,17 +40,17 @@ func Broadcast(msg WsMessage) {
 		log.Printf("序列化 WebSocket 消息失败: %v", err)
 		return
 	}
-	if err := Hub.Broadcast(data); err != nil {
+	if err := hub.Broadcast(data); err != nil {
 		log.Printf("广播消息失败: %v", err)
 	}
 }
 
 // HandleRequest 将 HTTP 升级为 WebSocket 连接。
 func HandleRequest(w http.ResponseWriter, r *http.Request) error {
-	return Hub.HandleRequest(w, r)
+	return hub.HandleRequest(w, r)
 }
 
 // Close 关闭所有 WebSocket 连接。
 func Close() error {
-	return Hub.Close()
+	return hub.Close()
 }

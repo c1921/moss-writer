@@ -66,11 +66,11 @@ func main() {
 	// ---- RESTful 路由 ----
 	api := e.Group("/api")
 	notes := api.Group("/notes")
-	notes.GET("", handlers.MakeListNotes(store.DB))
-	notes.GET("/:id", handlers.MakeGetNote(store.DB))
-	notes.POST("", handlers.MakeCreateNote(store.DB))
-	notes.PUT("/:id", handlers.MakeUpdateNote(store.DB))
-	notes.DELETE("/:id", handlers.MakeDeleteNote(store.DB))
+	notes.GET("", handlers.MakeListNotes(store.DB()))
+	notes.GET("/:id", handlers.MakeGetNote(store.DB()))
+	notes.POST("", handlers.MakeCreateNote(store.DB()))
+	notes.PUT("/:id", handlers.MakeUpdateNote(store.DB()))
+	notes.DELETE("/:id", handlers.MakeDeleteNote(store.DB()))
 
 	// WebSocket 端点
 	e.GET("/ws", func(c *echo.Context) error {
