@@ -72,13 +72,17 @@ func MakeUpdateNote(db *gorm.DB) echo.HandlerFunc {
 		if err := db.First(&note, id).Error; err != nil {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "笔记不存在"})
 		}
-		var input models.Note
+		var input struct {
+			Title   string `json:"title"`
+			Content string `json:"content"`
+		}
 		if err := c.Bind(&input); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "无效的请求体"})
 		}
-		note.Title = input.Title
-		note.Content = input.Content
-		if err := db.Save(&note).Error; err != nil {
+		if err := db.Model(&note).Updates(map[string]any{
+			"title":   input.Title,
+			"content": input.Content,
+		}).Error; err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 		ws.Broadcast(ws.WsMessage{Type: "note_updated", Note: &note})
