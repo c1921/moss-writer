@@ -1,14 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"backend/models"
 
@@ -226,10 +230,45 @@ func main() {
 		})
 	}
 
-	// 启动服务
+	// 启动服务（使用自定义 http.Server 以支持优雅关闭）
 	addr := ":" + envOrDefault("PORT", "8080")
-	fmt.Printf("服务启动于 http://localhost%s\n", addr)
-	if err := e.Start(addr); err != nil {
-		log.Fatalf("服务启动失败: %v", err)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: e,
 	}
+	fmt.Printf("服务启动于 http://localhost%s\n", addr)
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("服务启动失败: %v", err)
+		}
+	}()
+
+	// 等待中断信号
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("正在优雅关闭服务…")
+
+	// 关闭 WebSocket（通知客户端并停止接受新连接）
+	if err := m.Close(); err != nil {
+		log.Printf("关闭 WebSocket 失败: %v", err)
+	}
+
+	// 关闭 HTTP 服务，给予 10 秒完成进行中的请求
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("关闭 HTTP 服务失败: %v", err)
+	}
+
+	// 关闭数据库连接
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Printf("获取数据库实例失败: %v", err)
+	} else if err := sqlDB.Close(); err != nil {
+		log.Printf("关闭数据库失败: %v", err)
+	}
+
+	log.Println("服务已关闭")
 }
