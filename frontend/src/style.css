@@ -138,3 +138,26 @@
 .dark .milkdown-theme-nord code {
   background-color: var(--color-gray-700);
 }
+
+/* Milkdown 编辑器滚动条暗色模式适配 */
+[data-milkdown-root] {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-gray-200) transparent;
+}
+.dark [data-milkdown-root] {
+  scrollbar-color: var(--color-gray-700) transparent;
+}
+
+[data-milkdown-root]::-webkit-scrollbar {
+  width: 6px;
+}
+[data-milkdown-root]::-webkit-scrollbar-track {
+  background: transparent;
+}
+[data-milkdown-root]::-webkit-scrollbar-thumb {
+  background: var(--color-gray-200);
+  border-radius: 3px;
+}
+.dark [data-milkdown-root]::-webkit-scrollbar-thumb {
+  background: var(--color-gray-700);
+}
