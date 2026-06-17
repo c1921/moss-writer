@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import NoteSidebar from './components/NoteSidebar.vue'
 import NoteEditor from './components/NoteEditor.vue'
 import { listNotes, getNote, createNote, updateNote, deleteNote } from './api/notes'
@@ -9,6 +9,13 @@ import type { Note } from './api/notes'
 const notes = ref<Note[]>([])
 const selectedId = ref<number | null>(null)
 const selectedNote = ref<Note | null>(null)
+const saving = ref(false)
+const saveStatus = ref<'idle' | 'saved'>('idle')
+let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
+
+// 组件引用（用于键盘快捷键）
+const sidebarRef = ref<InstanceType<typeof NoteSidebar> | null>(null)
+const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null)
 
 // WebSocket 实时同步
 const { connected, onMessage } = useWebSocket()
@@ -94,6 +101,8 @@ async function handleCreate() {
 
 // 保存笔记（由 NoteEditor 的 debounced update 触发）
 async function handleUpdate(payload: { id: number; title: string; content: string }) {
+  saving.value = true
+  saveStatus.value = 'idle'
   try {
     const updated = await updateNote(payload.id, {
       title: payload.title,
@@ -106,8 +115,16 @@ async function handleUpdate(payload: { id: number; title: string; content: strin
     if (idx !== -1) {
       notes.value[idx] = updated
     }
+    saveStatus.value = 'saved'
+    if (saveStatusTimer) clearTimeout(saveStatusTimer)
+    saveStatusTimer = setTimeout(() => {
+      saveStatus.value = 'idle'
+    }, 2000)
   } catch (err) {
     console.error('保存笔记失败:', err)
+    saveStatus.value = 'idle'
+  } finally {
+    saving.value = false
   }
 }
 
@@ -125,8 +142,35 @@ async function handleDelete(id: number) {
   }
 }
 
+// 键盘快捷键
+function onKeyDown(e: KeyboardEvent) {
+  const mod = e.ctrlKey || e.metaKey
+  if (!mod) return
+
+  switch (e.key.toLowerCase()) {
+    case 'n':
+      e.preventDefault()
+      handleCreate()
+      break
+    case 's':
+      e.preventDefault()
+      editorRef.value?.saveNow()
+      break
+    case 'k':
+      e.preventDefault()
+      sidebarRef.value?.focusSearch()
+      break
+  }
+}
+
 onMounted(() => {
   loadNotes()
+  window.addEventListener('keydown', onKeyDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown)
+  if (saveStatusTimer) clearTimeout(saveStatusTimer)
 })
 </script>
 
@@ -135,6 +179,7 @@ onMounted(() => {
     <!-- 左侧边栏 -->
     <div class="w-72 shrink-0">
       <NoteSidebar
+        ref="sidebarRef"
         :notes="notes"
         :selected-id="selectedId"
         @select="selectNote"
@@ -146,7 +191,10 @@ onMounted(() => {
     <!-- 右侧编辑器 -->
     <div class="flex-1 min-w-0">
       <NoteEditor
+        ref="editorRef"
         :note="selectedNote"
+        :saving="saving"
+        :save-status="saveStatus"
         @update="handleUpdate"
       />
     </div>

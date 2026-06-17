@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { Note } from '@/api/notes'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { IconMoon, IconSun } from '@tabler/icons-vue'
+import { useDarkMode } from '@/composables/useDarkMode'
 
 const props = defineProps<{
   notes: Note[]
@@ -21,6 +24,31 @@ const emit = defineEmits<{
   create: []
   delete: [id: number]
 }>()
+
+// 搜索
+const searchQuery = ref('')
+const searchInputRef = ref<InstanceType<typeof Input> | null>(null)
+
+const { isDark, toggle: toggleDark } = useDarkMode()
+
+function focusSearch() {
+  // 通过 DOM 查找搜索输入框并聚焦
+  const input = document.querySelector('.note-search-input input') as HTMLInputElement | null
+  input?.focus()
+}
+
+const filteredNotes = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return props.notes
+  return props.notes.filter(
+    (n) =>
+      n.title.toLowerCase().includes(q) ||
+      n.content.toLowerCase().includes(q)
+  )
+})
+
+// 暴露搜索框聚焦方法供父组件调用（Ctrl+K）
+defineExpose({ focusSearch })
 
 // 删除确认状态
 const deleteTarget = ref<Note | null>(null)
@@ -48,20 +76,44 @@ function formatTime(iso: string): string {
 
 <template>
   <div class="flex flex-col h-full border-r border-border">
-    <!-- 顶部：新建按钮 -->
-    <div class="p-3 border-b border-border">
-      <Button variant="default" class="w-full" @click="emit('create')">
+    <!-- 顶部：新建按钮 + 暗色模式 -->
+    <div class="p-3 border-b border-border flex gap-2">
+      <Button variant="default" class="flex-1" @click="emit('create')">
         新建笔记
       </Button>
+      <Button
+        variant="outline"
+        size="icon"
+        @click="toggleDark"
+        :title="isDark ? '切换亮色模式' : '切换暗色模式'"
+      >
+        <IconSun v-if="isDark" :size="16" />
+        <IconMoon v-else :size="16" />
+      </Button>
+    </div>
+
+    <!-- 搜索框 -->
+    <div class="px-3 py-2 border-b border-border note-search-input">
+      <div class="relative">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <Input
+          v-model="searchQuery"
+          placeholder="搜索笔记…"
+          class="pl-8 h-8 text-sm"
+        />
+      </div>
     </div>
 
     <!-- 笔记列表 -->
     <div class="flex-1 overflow-y-auto">
-      <div v-if="notes.length === 0" class="p-4 text-center text-muted-foreground text-sm">
+      <div v-if="filteredNotes.length === 0 && props.notes.length === 0" class="p-4 text-center text-muted-foreground text-sm">
         暂无笔记，点击上方按钮创建
       </div>
+      <div v-else-if="filteredNotes.length === 0" class="p-4 text-center text-muted-foreground text-sm">
+        无匹配结果
+      </div>
       <div
-        v-for="note in notes"
+        v-for="note in filteredNotes"
         :key="note.id"
         class="group flex items-center justify-between px-3 py-2.5 cursor-pointer border-b border-border/50 hover:bg-accent/60 transition-colors"
         :class="{ 'bg-accent/40': note.id === selectedId }"

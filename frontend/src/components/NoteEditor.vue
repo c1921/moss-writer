@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 
 const props = defineProps<{
   note: Note | null
+  saving?: boolean
+  saveStatus?: 'idle' | 'saved'
 }>()
 
 const emit = defineEmits<{
@@ -54,6 +56,19 @@ function onContentChange(v: string) {
   content.value = v
   scheduleSave()
 }
+
+function saveNow() {
+  if (saveTimer) clearTimeout(saveTimer)
+  if (props.note) {
+    emit('update', {
+      id: props.note.id,
+      title: title.value,
+      content: content.value,
+    })
+  }
+}
+
+defineExpose({ saveNow })
 </script>
 
 <template>
@@ -65,13 +80,21 @@ function onContentChange(v: string) {
 
     <!-- 编辑器 -->
     <template v-else>
-      <div class="p-3 border-b border-border">
+      <div class="p-3 border-b border-border flex items-center gap-2">
         <Input
           v-model="title"
           placeholder="笔记标题"
-          class="text-lg font-semibold border-0 shadow-none !ring-0 px-0 h-auto py-0"
+          class="text-lg font-semibold border-0 shadow-none !ring-0 px-0 h-auto py-0 flex-1"
           @input="onTitleChange"
         />
+        <span
+          v-if="saving"
+          class="text-xs text-muted-foreground shrink-0 animate-pulse"
+        >保存中…</span>
+        <span
+          v-else-if="saveStatus === 'saved'"
+          class="text-xs text-emerald-600 dark:text-emerald-400 shrink-0"
+        >已保存</span>
       </div>
       <div class="flex-1 overflow-hidden">
         <MdEditor

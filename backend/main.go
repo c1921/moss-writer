@@ -67,10 +67,16 @@ func broadcast(msg WsMessage) {
 
 // ---- Handlers ----
 
-// listNotes 获取笔记列表
+// listNotes 获取笔记列表，支持 ?q= 全文搜索
 func listNotes(c *echo.Context) error {
 	var notes []models.Note
-	if err := db.Order("updated_at DESC").Find(&notes).Error; err != nil {
+	q := c.QueryParam("q")
+	tx := db.Order("updated_at DESC")
+	if q != "" {
+		like := "%" + q + "%"
+		tx = tx.Where("title LIKE ? OR content LIKE ?", like, like)
+	}
+	if err := tx.Find(&notes).Error; err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, notes)

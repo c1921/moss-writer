@@ -24,8 +24,10 @@ const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-export async function listNotes(): Promise<Note[]> {
-  const res = await client.get<Note[]>('/notes')
+export async function listNotes(q?: string): Promise<Note[]> {
+  const params: Record<string, string> = {}
+  if (q) params.q = q
+  const res = await client.get<Note[]>('/notes', { params })
   return res.data
 }
 
