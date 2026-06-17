@@ -1,5 +1,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { listNotes, getNote, createNote, updateNote, deleteNote, type Note } from '@/api/notes'
+import { getSetting, putSetting } from '@/api/settings'
 import { useWebSocket, type WsMessage } from './useWebSocket'
 
 /**
@@ -62,11 +63,25 @@ export function useNotes() {
     errorMessage.value = null
   }
 
+  const lastOpenedKey = 'last-note-id'
+
   // ---- CRUD 操作 ----
 
   async function loadNotes() {
     try {
       notes.value = await listNotes()
+      // 尝试恢复上次打开的笔记
+      try {
+        const setting = await getSetting(lastOpenedKey)
+        if (setting.value) {
+          const id = Number(setting.value)
+          if (!Number.isNaN(id) && notes.value.some((n) => n.id === id)) {
+            selectNote(id)
+          }
+        }
+      } catch {
+        // 获取上次打开笔记失败，静默忽略
+      }
     } catch (err) {
       showError('加载笔记列表失败，请检查后端是否运行')
     }
@@ -81,6 +96,8 @@ export function useNotes() {
       selectedNote.value = fresh
       const idx = notes.value.findIndex((n) => n.id === id)
       if (idx !== -1) notes.value[idx] = fresh
+      // 持久化最后打开笔记 ID
+      putSetting(lastOpenedKey, String(id)).catch(() => {})
     } catch (err) {
       showError('加载笔记详情失败')
     }
@@ -129,6 +146,12 @@ export function useNotes() {
         selectedNote.value = null
       }
       notes.value = notes.value.filter((n) => n.id !== id)
+      // 如果删除的正是最后打开的笔记，清除记录
+      getSetting(lastOpenedKey).then((s) => {
+        if (Number(s.value) === id) {
+          putSetting(lastOpenedKey, '').catch(() => {})
+        }
+      }).catch(() => {})
     } catch (err) {
       showError('删除笔记失败')
     }

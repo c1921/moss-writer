@@ -37,7 +37,7 @@ func Init() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
-	if err := db.AutoMigrate(&models.Note{}); err != nil {
+	if err := db.AutoMigrate(&models.Note{}, &models.Setting{}); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 

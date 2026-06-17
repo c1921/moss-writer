@@ -72,6 +72,11 @@ func main() {
 	notes.PUT("/:id", handlers.MakeUpdateNote(store.DB()))
 	notes.DELETE("/:id", handlers.MakeDeleteNote(store.DB()))
 
+	// Settings 键值配置
+	settings := api.Group("/settings")
+	settings.GET("/:key", handlers.MakeGetSetting(store.DB()))
+	settings.PUT("/:key", handlers.MakePutSetting(store.DB()))
+
 	// WebSocket 端点
 	e.GET("/ws", func(c *echo.Context) error {
 		return ws.HandleRequest(c.Response(), c.Request())
