@@ -3,7 +3,11 @@ services:
     build: .
     container_name: moss-writer
     ports:
-      - "8080:8080"
+      # 修改冒号前的端口号即可更换宿主机端口，如 "3000:8080"
+      - "${PORT:-8080}:8080"
+    environment:
+      # 容器内实际监听端口（一般无需修改）
+      - PORT=8080
     volumes:
       - ./data:/app/data
     restart: unless-stopped

@@ -35,8 +35,13 @@ pnpm dev
 ### Docker 部署
 
 ```bash
+# 默认端口 8080
 docker compose up --build
 # → http://localhost:8080
+
+# 若 8080 被占用，通过 PORT 变量指定其他端口
+PORT=3000 docker compose up --build
+# → http://localhost:3000
 ```
 
 数据持久化在 `./data/notes.db`（通过 bind mount）。
@@ -89,7 +94,26 @@ moss-writer/
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `PORT` | `8080` | 监听端口 |
+| `PORT` | `8080` | 监听端口。若 8080 被占用，改为 `3000` 或任意空闲端口 |
+
+同时更新 docker-compose 中的端口部分。随后在 Docker 部署一节补充环境变量用法。
+
+Docker 启动方式补充：
+
+```bash
+# 默认端口 8080
+docker compose up --build
+
+# 自定义端口（如 3000）
+PORT=3000 docker compose up --build
+# 或修改 docker-compose.yml 中 ports 为 "3000:8080"
+```
+
+让我也更新 Docker 部署章节。<｜end▁of▁thinking｜>
+
+<｜｜DSML｜｜tool_calls>
+<｜｜DSML｜｜invoke name="edit_file">
+<｜｜DSML｜｜parameter name="new_string" string="true">| `PORT` | `8080` | 监听端口。若 8080 被占用，改为 `3000` 或任意空闲端口 |
 | `DB_PATH` | `data/notes.db` | SQLite 数据库路径 |
 | `CORS_ORIGINS` | 空（禁用） | 允许的跨域来源，逗号分隔，如 `http://localhost:5173` |
 | `SPA_STATIC_DIR` | 空（禁用） | 前端 `dist/` 目录路径，Docker 中设为 `/app/dist` |
