@@ -180,9 +180,11 @@ func main() {
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
-	// CORS：仅当 CORS_ORIGINS 环境变量设置时启用（开发模式）
+	// CORS：生产模式（SPA 同源托管）自动禁用；开发模式智能启用
 	corsOrigins := os.Getenv("CORS_ORIGINS")
+	spaDir := os.Getenv("SPA_STATIC_DIR")
 	if corsOrigins != "" {
+		// 显式配置的 CORS 来源
 		origins := strings.Split(corsOrigins, ",")
 		for i := range origins {
 			origins[i] = strings.TrimSpace(origins[i])
@@ -193,6 +195,14 @@ func main() {
 			AllowHeaders: []string{"Content-Type"},
 		}))
 		log.Printf("CORS 已启用，允许来源: %v", origins)
+	} else if spaDir == "" {
+		// 开发模式：未设置 SPA_STATIC_DIR 时自动允许常见 Vite 开发端口
+		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+			AllowOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173"},
+			AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+			AllowHeaders: []string{"Content-Type"},
+		}))
+		log.Println("CORS 已自动启用（开发模式），允许来源: localhost:5173")
 	}
 
 	// RESTful 路由
@@ -210,7 +220,6 @@ func main() {
 	})
 
 	// SPA 静态文件托管（Docker 模式）
-	spaDir := os.Getenv("SPA_STATIC_DIR")
 	if spaDir != "" {
 		log.Printf("静态文件服务启用: %s", spaDir)
 		// 静态资源（JS/CSS/图片等）
