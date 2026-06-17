@@ -27,7 +27,6 @@ const emit = defineEmits<{
 
 // 搜索
 const searchQuery = ref('')
-const searchInputRef = ref<InstanceType<typeof Input> | null>(null)
 
 const { isDark, toggle: toggleDark } = useDarkMode()
 

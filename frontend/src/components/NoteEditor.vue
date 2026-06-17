@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch } from 'vue'
 import { MdEditor } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import type { Note } from '@/api/notes'
@@ -84,7 +84,7 @@ defineExpose({ saveNow })
         <Input
           v-model="title"
           placeholder="笔记标题"
-          class="text-lg font-semibold border-0 shadow-none !ring-0 px-0 h-auto py-0 flex-1"
+          class="text-lg font-semibold border-0 shadow-none ring-0! px-0 h-auto py-0 flex-1"
           @input="onTitleChange"
         />
         <span
@@ -102,10 +102,10 @@ defineExpose({ saveNow })
           language="en-US"
           :preview="true"
           :toolbars="[
-            'bold', 'italic', 'strikethrough', '|',
-            'title', '|',
-            'unorderedList', 'orderedList', 'code', 'quote', '|',
-            'table', 'link', 'image', '|',
+            'bold', 'italic', 'strikeThrough', '-',
+            'title', '-',
+            'unorderedList', 'orderedList', 'code', 'quote', '-',
+            'table', 'link', 'image', '-',
             'preview',
           ]"
           class="h-full"
