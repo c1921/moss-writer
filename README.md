@@ -61,19 +61,21 @@ PORT=3000 docker compose up --build
 ```
 moss-writer/
 ├── backend/
-│   ├── main.go            # 入口：Echo 路由、Melody WebSocket
-│   ├── models/
-│   │   └── note.go        # Note GORM 模型
-│   └── data/              # SQLite 数据库（已 gitignore）
+│   ├── main.go              # 入口：路由组装、优雅关闭
+│   ├── store/db.go          # SQLite 连接与自动迁移
+│   ├── ws/hub.go            # WebSocket 管理与广播
+│   ├── handlers/notes.go    # CRUD handler（闭包注入依赖）
+│   ├── models/note.go       # Note GORM 模型
+│   └── data/                # SQLite 数据库（已 gitignore）
 ├── frontend/
 │   ├── src/
-│   │   ├── api/notes.ts          # REST API 封装
-│   │   ├── composables/          # useWebSocket / useDarkMode
+│   │   ├── api/notes.ts            # REST API 封装
+│   │   ├── composables/            # useNotes / useWebSocket / useDarkMode
 │   │   └── components/
-│   │       ├── NoteSidebar.vue   # 侧边栏：列表、搜索、暗色切换
-│   │       ├── NoteEditor.vue    # 编辑器：md-editor-v3 + 标题栏
-│   │       └── ui/               # shadcn-vue 组件
-│   └── .env.development          # 开发环境变量
+│   │       ├── NoteSidebar.vue     # 侧边栏：列表、搜索、暗色切换
+│   │       ├── NoteEditor.vue      # 编辑器：md-editor-v3 + 标题栏
+│   │       └── ui/                 # shadcn-vue 组件
+│   └── .env.development            # 开发环境变量
 ├── Dockerfile              # 多阶段构建
 ├── docker-compose.yml      # 单服务编排
 └── .dockerignore
@@ -94,22 +96,17 @@ moss-writer/
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `PORT` | `8080` | 监听端口。若 8080 被占用，改为 `3000` 或任意空闲端口 |
+| `PORT` | `8080` | 监听端口 |
+| `DB_PATH` | `data/notes.db` | SQLite 数据库文件路径 |
+| `CORS_ORIGINS` | 空 | 显式 CORS 来源（逗号分隔）。未设置且非 Docker 模式时自动允许 `localhost:5173` |
+| `SPA_STATIC_DIR` | 空 | 前端静态文件目录。Docker 中自动设为 `/app/dist`，启用同源托管 |
 
-同时更新 docker-compose 中的端口部分。随后在 Docker 部署一节补充环境变量用法。
+## 环境变量（前端）
 
-Docker 启动方式补充：
-
-```bash
-# 默认端口 8080
-docker compose up --build
-
-# 自定义端口（如 3000）
-PORT=3000 docker compose up --build
-# 或修改 docker-compose.yml 中 ports 为 "3000:8080"
-```
-
-让我也更新 Docker 部署章节。<｜end▁of▁thinking｜>
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `VITE_API_BASE_URL` | `/api` | 后端 API 地址。开发模式在 `.env.development` 中设为 `http://localhost:8080/api` |
+| `VITE_WS_URL` | 自动推导 | WebSocket 地址。开发模式在 `.env.development` 中设为 `ws://localhost:8080/ws` |<｜end▁of▁thinking｜>
 
 <｜｜DSML｜｜tool_calls>
 <｜｜DSML｜｜invoke name="edit_file">
