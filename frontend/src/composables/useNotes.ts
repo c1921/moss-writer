@@ -12,7 +12,9 @@ export function useNotes() {
   const selectedNote = ref<Note | null>(null)
   const saving = ref(false)
   const saveStatus = ref<'idle' | 'saved'>('idle')
+  const errorMessage = ref<string | null>(null)
   let saveStatusTimer: ReturnType<typeof setTimeout> | null = null
+  let errorTimer: ReturnType<typeof setTimeout> | null = null
 
   const { connected, onMessage } = useWebSocket()
 
@@ -44,13 +46,29 @@ export function useNotes() {
     }
   })
 
+  // ---- 错误通知 ----
+
+  function showError(msg: string) {
+    console.error(msg)
+    errorMessage.value = msg
+    if (errorTimer) clearTimeout(errorTimer)
+    errorTimer = setTimeout(() => {
+      errorMessage.value = null
+    }, 5000)
+  }
+
+  function clearError() {
+    if (errorTimer) clearTimeout(errorTimer)
+    errorMessage.value = null
+  }
+
   // ---- CRUD 操作 ----
 
   async function loadNotes() {
     try {
       notes.value = await listNotes()
     } catch (err) {
-      console.error('加载笔记列表失败:', err)
+      showError('加载笔记列表失败，请检查后端是否运行')
     }
   }
 
@@ -64,7 +82,7 @@ export function useNotes() {
       const idx = notes.value.findIndex((n) => n.id === id)
       if (idx !== -1) notes.value[idx] = fresh
     } catch (err) {
-      console.error('加载笔记详情失败:', err)
+      showError('加载笔记详情失败')
     }
   }
 
@@ -75,7 +93,7 @@ export function useNotes() {
       selectedId.value = note.id
       selectedNote.value = note
     } catch (err) {
-      console.error('创建笔记失败:', err)
+      showError('创建笔记失败')
     }
   }
 
@@ -96,7 +114,7 @@ export function useNotes() {
         saveStatus.value = 'idle'
       }, 2000)
     } catch (err) {
-      console.error('保存笔记失败:', err)
+      showError('保存笔记失败，请稍后重试')
       saveStatus.value = 'idle'
     } finally {
       saving.value = false
@@ -112,7 +130,7 @@ export function useNotes() {
       }
       notes.value = notes.value.filter((n) => n.id !== id)
     } catch (err) {
-      console.error('删除笔记失败:', err)
+      showError('删除笔记失败')
     }
   }
 
@@ -123,6 +141,7 @@ export function useNotes() {
 
   onUnmounted(() => {
     if (saveStatusTimer) clearTimeout(saveStatusTimer)
+    if (errorTimer) clearTimeout(errorTimer)
   })
 
   return {
@@ -136,5 +155,7 @@ export function useNotes() {
     handleCreate,
     handleUpdate,
     handleDelete,
+    errorMessage,
+    clearError,
   }
 }

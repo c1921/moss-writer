@@ -15,6 +15,8 @@ const {
   handleCreate,
   handleUpdate,
   handleDelete,
+  errorMessage,
+  clearError,
 } = useNotes()
 
 // 组件引用（用于键盘快捷键）
@@ -82,6 +84,20 @@ onUnmounted(() => {
       class="fixed bottom-3 right-3 px-2.5 py-1 rounded-md text-xs font-medium bg-destructive/15 text-destructive border border-destructive/30"
     >
       离线
+    </div>
+
+    <!-- 错误通知 -->
+    <div
+      v-if="errorMessage"
+      class="fixed bottom-3 left-1/2 -translate-x-1/2 px-4 py-2 rounded-md text-sm font-medium bg-destructive/15 text-destructive border border-destructive/30 flex items-center gap-3 shadow-lg max-w-lg"
+    >
+      <span class="truncate">{{ errorMessage }}</span>
+      <button
+        class="shrink-0 hover:text-destructive/70 transition-colors"
+        @click="clearError"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
     </div>
   </div>
 </template>

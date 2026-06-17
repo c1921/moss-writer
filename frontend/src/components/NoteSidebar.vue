@@ -27,13 +27,13 @@ const emit = defineEmits<{
 
 // 搜索
 const searchQuery = ref('')
+const searchInputRef = ref<InstanceType<typeof Input> | null>(null)
 
 const { isDark, toggle: toggleDark } = useDarkMode()
 
 function focusSearch() {
-  // 通过 DOM 查找搜索输入框并聚焦
-  const input = document.querySelector('.note-search-input input') as HTMLInputElement | null
-  input?.focus()
+  const el = searchInputRef.value?.$el as HTMLInputElement | undefined
+  el?.focus()
 }
 
 const filteredNotes = computed(() => {
@@ -96,6 +96,7 @@ function formatTime(iso: string): string {
       <div class="relative">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <Input
+          ref="searchInputRef"
           v-model="searchQuery"
           placeholder="搜索笔记…"
           class="pl-8 h-8 text-sm"
