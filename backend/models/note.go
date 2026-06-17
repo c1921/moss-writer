@@ -2,10 +2,11 @@ package models
 
 import "time"
 
+// Note 笔记模型
 type Note struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Title     string    `gorm:"default:''" json:"title"`
-	Content   string    `gorm:"default:''" json:"content"`
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	Title     string    `json:"title" gorm:"not null"`
+	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

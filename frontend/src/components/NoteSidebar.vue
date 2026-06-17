@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from "vue"
-import { IconPlus, IconTrash, IconFileText } from "@tabler/icons-vue"
-import { Button } from "@/components/ui/button"
+import { ref } from 'vue'
+import type { Note } from '@/api/notes'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -9,113 +9,93 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogClose,
-} from "@/components/ui/dialog"
-import type { Note } from "@/api/notes"
+} from '@/components/ui/dialog'
 
-defineProps<{
+const props = defineProps<{
   notes: Note[]
   selectedId: number | null
 }>()
 
 const emit = defineEmits<{
-  select: [note: Note]
+  select: [id: number]
   create: []
-  delete: [note: Note]
+  delete: [id: number]
 }>()
 
+// 删除确认状态
 const deleteTarget = ref<Note | null>(null)
-const deleteOpen = ref(false)
 
-function onDeleteClick(note: Note, e: Event) {
-  e.stopPropagation()
+function confirmDelete(note: Note) {
   deleteTarget.value = note
-  deleteOpen.value = true
 }
 
-function confirmDelete() {
+function doDelete() {
   if (deleteTarget.value) {
-    emit("delete", deleteTarget.value)
+    emit('delete', deleteTarget.value.id)
     deleteTarget.value = null
   }
-  deleteOpen.value = false
-}
-
-function cancelDelete() {
-  deleteTarget.value = null
-  deleteOpen.value = false
 }
 
 function formatTime(iso: string): string {
   const d = new Date(iso)
-  const now = new Date()
-  const isToday = d.toDateString() === now.toDateString()
-  const time = d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
-  if (isToday) return time
-  return d.toLocaleDateString("zh-CN", { month: "short", day: "numeric" }) + " " + time
+  const month = d.getMonth() + 1
+  const day = d.getDate()
+  const hour = d.getHours().toString().padStart(2, '0')
+  const minute = d.getMinutes().toString().padStart(2, '0')
+  return `${month}/${day} ${hour}:${minute}`
 }
 </script>
 
 <template>
-  <aside class="w-72 h-screen border-r flex flex-col bg-muted/30 shrink-0">
-    <!-- Header -->
-    <div class="p-3 border-b">
-      <Button class="w-full" @click="emit('create')">
-        <IconPlus class="size-4" />
+  <div class="flex flex-col h-full border-r border-border">
+    <!-- 顶部：新建按钮 -->
+    <div class="p-3 border-b border-border">
+      <Button variant="default" class="w-full" @click="emit('create')">
         新建笔记
       </Button>
     </div>
 
-    <!-- Note list -->
+    <!-- 笔记列表 -->
     <div class="flex-1 overflow-y-auto">
       <div v-if="notes.length === 0" class="p-4 text-center text-muted-foreground text-sm">
-        还没有笔记，点击上方按钮创建
+        暂无笔记，点击上方按钮创建
       </div>
       <div
         v-for="note in notes"
         :key="note.id"
-        class="group flex items-center gap-2 px-3 py-2.5 cursor-pointer border-b border-border/50 hover:bg-accent transition-colors"
-        :class="{ 'bg-accent': note.id === selectedId }"
-        @click="emit('select', note)"
+        class="group flex items-center justify-between px-3 py-2.5 cursor-pointer border-b border-border/50 hover:bg-accent/60 transition-colors"
+        :class="{ 'bg-accent/40': note.id === selectedId }"
+        @click="emit('select', note.id)"
       >
-        <IconFileText class="size-4 shrink-0 text-muted-foreground" />
-        <div class="flex-1 min-w-0">
-          <div class="text-sm font-medium truncate">
-            {{ note.title || '无标题' }}
-          </div>
-          <div class="text-xs text-muted-foreground mt-0.5">
-            {{ formatTime(note.updated_at) }}
-          </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-medium truncate">{{ note.title || '未命名笔记' }}</div>
+          <div class="text-xs text-muted-foreground mt-0.5">{{ formatTime(note.updated_at) }}</div>
         </div>
-
-        <!-- Delete button (visible on hover) -->
         <Button
           variant="ghost"
           size="icon-sm"
-          class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-          @click="(e: Event) => onDeleteClick(note, e)"
+          class="ml-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+          @click.stop="confirmDelete(note)"
         >
-          <IconTrash class="size-3.5 text-destructive" />
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-.867 12.142A2 2 0 0 1 16.138 20H7.862a2 2 0 0 1-1.995-1.858L5 6"/><path d="M10 10v5"/><path d="M14 10v5"/></svg>
         </Button>
       </div>
     </div>
 
-    <!-- Delete confirmation dialog -->
-    <Dialog :open="deleteOpen" @update:open="(val: boolean) => { if (!val) cancelDelete() }">
-      <DialogContent>
+    <!-- 删除确认对话框 -->
+    <Dialog :open="deleteTarget !== null" @update:open="(v: boolean) => { if (!v) deleteTarget = null }">
+      <DialogContent class="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>确认删除</DialogTitle>
           <DialogDescription>
-            确定要删除笔记「{{ deleteTarget?.title || '无标题' }}」吗？此操作不可撤销。
+            将永久删除笔记「{{ deleteTarget?.title || '未命名笔记' }}」，此操作不可撤销。
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <DialogClose as-child>
-            <Button variant="outline" @click="cancelDelete">取消</Button>
-          </DialogClose>
-          <Button variant="destructive" @click="confirmDelete">删除</Button>
+          <Button variant="outline" @click="deleteTarget = null">取消</Button>
+          <Button variant="destructive" @click="doDelete">确认删除</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </aside>
+  </div>
 </template>

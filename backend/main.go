@@ -1,142 +1,182 @@
 package main
 
 import (
-	"log/slog"
+	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
-	"os"
-	"path/filepath"
+	"strconv"
 
 	"backend/models"
 
-	"github.com/glebarez/sqlite"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
+	"github.com/olahol/melody"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
-var db *gorm.DB
+var (
+	db *gorm.DB
+	m  *melody.Melody
+)
 
-func main() {
-	// Ensure data directory exists
-	dataDir := filepath.Join(".", "data")
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		panic(err)
-	}
+// WsMessage WebSocket 消息结构
+type WsMessage struct {
+	Type string       `json:"type"`
+	Note *models.Note `json:"note,omitempty"`
+	ID   uint         `json:"id,omitempty"`
+}
 
-	// Initialize SQLite
+func initDB() {
 	var err error
-	db, err = gorm.Open(sqlite.Open(filepath.Join(dataDir, "notes.db")), &gorm.Config{})
+	db, err = gorm.Open(sqlite.Open("data/notes.db"), &gorm.Config{})
 	if err != nil {
-		panic(err)
+		log.Fatalf("数据库连接失败: %v", err)
 	}
-
-	// AutoMigrate
 	if err := db.AutoMigrate(&models.Note{}); err != nil {
-		panic(err)
+		log.Fatalf("数据库迁移失败: %v", err)
 	}
+	log.Println("数据库初始化完成")
+}
 
-	// Initialize Echo
-	e := echo.New()
+func initMelody() {
+	m = melody.New()
+	m.Upgrader.CheckOrigin = func(r *http.Request) bool { return true }
 
-	// CORS — allow all origins in development MVP
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		UnsafeAllowOriginFunc: func(c *echo.Context, origin string) (string, bool, error) {
-			return origin, true, nil
-		},
-		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
-		AllowHeaders:     []string{echo.HeaderContentType, echo.HeaderOrigin, echo.HeaderAccept},
-		AllowCredentials: true,
-	}))
+	m.HandleConnect(func(s *melody.Session) {
+		log.Printf("WebSocket 客户端连接: %s", s.RemoteAddr())
+	})
 
-	// Routes
-	api := e.Group("/api/notes")
+	m.HandleDisconnect(func(s *melody.Session) {
+		log.Printf("WebSocket 客户端断开: %s", s.RemoteAddr())
+	})
+}
 
-	api.GET("", listNotes)
-	api.GET("/:id", getNote)
-	api.POST("", createNote)
-	api.PUT("/:id", updateNote)
-	api.DELETE("/:id", deleteNote)
-
-	// Start server
-	if err := e.Start(":8080"); err != nil {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
+// broadcast 广播 WebSocket 消息给所有连接的客户端
+func broadcast(msg WsMessage) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("序列化 WebSocket 消息失败: %v", err)
+		return
+	}
+	if err := m.Broadcast(data); err != nil {
+		log.Printf("广播消息失败: %v", err)
 	}
 }
 
-// listNotes GET /api/notes
+// ---- Handlers ----
+
+// listNotes 获取笔记列表
 func listNotes(c *echo.Context) error {
 	var notes []models.Note
 	if err := db.Order("updated_at DESC").Find(&notes).Error; err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, notes)
 }
 
-// getNote GET /api/notes/:id
+// getNote 获取单条笔记
 func getNote(c *echo.Context) error {
-	id := c.Param("id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "无效的 ID"})
+	}
 	var note models.Note
 	if err := db.First(&note, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return c.JSON(http.StatusNotFound, map[string]any{"error": "note not found"})
-		}
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "笔记不存在"})
 	}
 	return c.JSON(http.StatusOK, note)
 }
 
-// createNote POST /api/notes
+// createNote 创建笔记
 func createNote(c *echo.Context) error {
 	var note models.Note
 	if err := c.Bind(&note); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "无效的请求体"})
 	}
-	note.ID = 0
+	if note.Title == "" {
+		note.Title = "未命名笔记"
+	}
 	if err := db.Create(&note).Error; err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+	broadcast(WsMessage{Type: "note_created", Note: &note})
 	return c.JSON(http.StatusCreated, note)
 }
 
-// updateNote PUT /api/notes/:id
+// updateNote 更新笔记
 func updateNote(c *echo.Context) error {
-	id := c.Param("id")
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "无效的 ID"})
+	}
 	var note models.Note
 	if err := db.First(&note, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return c.JSON(http.StatusNotFound, map[string]any{"error": "note not found"})
-		}
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "笔记不存在"})
 	}
-
 	var input models.Note
 	if err := c.Bind(&input); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "无效的请求体"})
 	}
-
 	note.Title = input.Title
 	note.Content = input.Content
-
 	if err := db.Save(&note).Error; err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+	broadcast(WsMessage{Type: "note_updated", Note: &note})
 	return c.JSON(http.StatusOK, note)
 }
 
-// deleteNote DELETE /api/notes/:id
+// deleteNote 删除笔记
 func deleteNote(c *echo.Context) error {
-	id := c.Param("id")
-	var note models.Note
-	if err := db.First(&note, id).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return c.JSON(http.StatusNotFound, map[string]any{"error": "note not found"})
-		}
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "无效的 ID"})
 	}
+	if err := db.Delete(&models.Note{}, id).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	broadcast(WsMessage{Type: "note_deleted", ID: uint(id)})
+	return c.JSON(http.StatusOK, map[string]string{"message": "已删除"})
+}
 
-	if err := db.Delete(&note).Error; err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
+func main() {
+	// 初始化
+	initDB()
+	initMelody()
+
+	// Echo 实例
+	e := echo.New()
+
+	// 中间件
+	e.Use(middleware.RequestLogger())
+	e.Use(middleware.Recover())
+
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173"},
+		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+		AllowHeaders: []string{"Content-Type"},
+	}))
+
+	// RESTful 路由
+	api := e.Group("/api")
+	notes := api.Group("/notes")
+	notes.GET("", listNotes)
+	notes.GET("/:id", getNote)
+	notes.POST("", createNote)
+	notes.PUT("/:id", updateNote)
+	notes.DELETE("/:id", deleteNote)
+
+	// WebSocket 端点
+	e.GET("/ws", func(c *echo.Context) error {
+		return m.HandleRequest(c.Response(), c.Request())
+	})
+
+	// 启动服务
+	addr := ":8080"
+	fmt.Printf("服务启动于 http://localhost%s\n", addr)
+	if err := e.Start(addr); err != nil {
+		log.Fatalf("服务启动失败: %v", err)
 	}
-	return c.NoContent(http.StatusNoContent)
 }

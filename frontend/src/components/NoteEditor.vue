@@ -1,114 +1,94 @@
 <script setup lang="ts">
-import { ref, watch, computed } from "vue"
-import { MdEditor } from "md-editor-v3"
-import "md-editor-v3/lib/style.css"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { IconDeviceFloppy } from "@tabler/icons-vue"
-import type { Note } from "@/api/notes"
+import { ref, watch, computed } from 'vue'
+import { MdEditor } from 'md-editor-v3'
+import 'md-editor-v3/lib/style.css'
+import type { Note } from '@/api/notes'
+import { Input } from '@/components/ui/input'
 
 const props = defineProps<{
   note: Note | null
-  saving: boolean
 }>()
 
 const emit = defineEmits<{
-  "update:title": [title: string]
-  "update:content": [content: string]
-  save: []
+  update: [payload: { id: number; title: string; content: string }]
 }>()
 
-const title = ref("")
-const content = ref("")
+const title = ref('')
+const content = ref('')
 
-// Only sync from props when switching to a different note (id changes),
-// not on every API response update — local state is the source of truth while editing.
+// 当选中笔记变化时同步到本地编辑状态
 watch(
-  () => props.note?.id ?? null,
-  (newId, oldId) => {
-    if (newId !== oldId) {
-      if (props.note) {
-        title.value = props.note.title
-        content.value = props.note.content
-      } else {
-        title.value = ""
-        content.value = ""
-      }
+  () => props.note,
+  (n) => {
+    if (n) {
+      title.value = n.title
+      content.value = n.content
+    } else {
+      title.value = ''
+      content.value = ''
     }
   },
   { immediate: true }
 )
 
-// Debounce timers
-let titleTimer: ReturnType<typeof setTimeout> | null = null
-let contentTimer: ReturnType<typeof setTimeout> | null = null
+let saveTimer: ReturnType<typeof setTimeout> | null = null
 
-function onTitleChange(value: string | number) {
-  title.value = String(value)
-  if (titleTimer) clearTimeout(titleTimer)
-  titleTimer = setTimeout(() => {
-    emit("update:title", title.value)
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    if (props.note) {
+      emit('update', {
+        id: props.note.id,
+        title: title.value,
+        content: content.value,
+      })
+    }
   }, 800)
 }
 
-function onContentChange(value: string) {
-  content.value = value
-  if (contentTimer) clearTimeout(contentTimer)
-  contentTimer = setTimeout(() => {
-    emit("update:content", content.value)
-  }, 800)
+function onTitleChange() {
+  scheduleSave()
 }
 
-function onSave() {
-  // Flush pending debounced changes immediately
-  if (titleTimer) { clearTimeout(titleTimer); titleTimer = null }
-  if (contentTimer) { clearTimeout(contentTimer); contentTimer = null }
-  emit("update:title", title.value)
-  emit("update:content", content.value)
-  emit("save")
+function onContentChange(v: string) {
+  content.value = v
+  scheduleSave()
 }
 </script>
 
 <template>
-  <div v-if="note" class="flex flex-col h-screen flex-1 min-w-0">
-    <!-- Top bar: title + save -->
-    <div class="flex items-center gap-3 px-4 py-3 border-b shrink-0">
-      <Input
-        :model-value="title"
-        class="flex-1 text-base font-medium"
-        placeholder="笔记标题"
-        @update:model-value="onTitleChange"
-      />
-      <Button
-        variant="outline"
-        size="sm"
-        :disabled="saving"
-        @click="onSave"
-      >
-        <IconDeviceFloppy class="size-4" />
-        {{ saving ? '保存中…' : '保存' }}
-      </Button>
+  <div class="flex flex-col h-full">
+    <!-- 未选中笔记时的占位 -->
+    <div v-if="!note" class="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+      选择左侧笔记开始编辑，或创建一篇新笔记
     </div>
 
-    <!-- Editor -->
-    <div class="flex-1 min-h-0">
-      <MdEditor
-        :model-value="content"
-        language="zh-CN"
-        theme="light"
-        preview-theme="github"
-        class="h-full"
-        @on-change="onContentChange"
-      />
-    </div>
-  </div>
-
-  <!-- Empty state -->
-  <div v-else class="flex-1 flex items-center justify-center h-screen text-muted-foreground">
-    <div class="text-center">
-      <IconDeviceFloppy class="size-12 mx-auto mb-3 opacity-30" />
-      <p class="text-lg">选择或创建一篇笔记</p>
-      <p class="text-sm mt-1">从左侧列表选择笔记，或点击「新建笔记」开始</p>
-    </div>
+    <!-- 编辑器 -->
+    <template v-else>
+      <div class="p-3 border-b border-border">
+        <Input
+          v-model="title"
+          placeholder="笔记标题"
+          class="text-lg font-semibold border-0 shadow-none !ring-0 px-0 h-auto py-0"
+          @input="onTitleChange"
+        />
+      </div>
+      <div class="flex-1 overflow-hidden">
+        <MdEditor
+          v-model="content"
+          language="en-US"
+          :preview="true"
+          :toolbars="[
+            'bold', 'italic', 'strikethrough', '|',
+            'title', '|',
+            'unorderedList', 'orderedList', 'code', 'quote', '|',
+            'table', 'link', 'image', '|',
+            'preview',
+          ]"
+          class="h-full"
+          @onChange="onContentChange"
+        />
+      </div>
+    </template>
   </div>
 </template>

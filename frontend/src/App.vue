@@ -1,110 +1,127 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue"
-import NoteSidebar from "./components/NoteSidebar.vue"
-import NoteEditor from "./components/NoteEditor.vue"
-import { listNotes, getNote, createNote, updateNote, deleteNote } from "./api/notes"
-import type { Note } from "./api/notes"
+import { ref, onMounted } from 'vue'
+import NoteSidebar from './components/NoteSidebar.vue'
+import NoteEditor from './components/NoteEditor.vue'
+import { listNotes, getNote, createNote, updateNote, deleteNote } from './api/notes'
+import { useWebSocket, type WsMessage } from './composables/useWebSocket'
+import type { Note } from './api/notes'
 
 const notes = ref<Note[]>([])
 const selectedId = ref<number | null>(null)
 const selectedNote = ref<Note | null>(null)
-const saving = ref(false)
 
-// Load notes list
+// WebSocket 实时同步
+const { connected, onMessage } = useWebSocket()
+
+onMessage((msg: WsMessage) => {
+  switch (msg.type) {
+    case 'note_created':
+      if (msg.note) {
+        // 如果本地还没有这条笔记，插入列表头部
+        const exists = notes.value.find((n) => n.id === msg.note!.id)
+        if (!exists) {
+          notes.value.unshift(msg.note)
+        }
+      }
+      break
+    case 'note_updated':
+      if (msg.note) {
+        // 更新列表中的对应笔记
+        const idx = notes.value.findIndex((n) => n.id === msg.note!.id)
+        if (idx !== -1) {
+          notes.value[idx] = msg.note
+        }
+        // 如果当前正在编辑这篇笔记，刷新编辑区（远端用新数据覆盖）
+        if (selectedId.value === msg.note.id) {
+          selectedNote.value = msg.note
+        }
+      }
+      break
+    case 'note_deleted':
+      if (msg.id) {
+        notes.value = notes.value.filter((n) => n.id !== msg.id)
+        if (selectedId.value === msg.id) {
+          selectedId.value = null
+          selectedNote.value = null
+        }
+      }
+      break
+  }
+})
+
+// 加载笔记列表
 async function loadNotes() {
   try {
     notes.value = await listNotes()
   } catch (err) {
-    console.error("Failed to load notes:", err)
+    console.error('加载笔记列表失败:', err)
   }
 }
 
-// Select a note
-async function selectNote(note: Note) {
-  selectedId.value = note.id
+// 选中笔记
+async function selectNote(id: number) {
+  selectedId.value = id
+  // 先从本地列表获取
+  const local = notes.value.find((n) => n.id === id)
+  if (local) {
+    selectedNote.value = local
+  }
+  // 再从服务端获取最新版本
   try {
-    selectedNote.value = await getNote(note.id)
+    const fresh = await getNote(id)
+    selectedNote.value = fresh
+    // 同步到列表
+    const idx = notes.value.findIndex((n) => n.id === id)
+    if (idx !== -1) {
+      notes.value[idx] = fresh
+    }
   } catch (err) {
-    console.error("Failed to load note:", err)
+    console.error('加载笔记详情失败:', err)
   }
 }
 
-// Create a new note
+// 新建笔记
 async function handleCreate() {
   try {
-    const note = await createNote()
-    await loadNotes()
+    const note = await createNote({ title: '未命名笔记', content: '' })
+    notes.value.unshift(note)
     selectedId.value = note.id
     selectedNote.value = note
   } catch (err) {
-    console.error("Failed to create note:", err)
+    console.error('创建笔记失败:', err)
   }
 }
 
-// Update title (debounced)
-async function handleUpdateTitle(title: string) {
-  if (!selectedNote.value) return
-  if (title === selectedNote.value.title) return
-  selectedNote.value.title = title
-  saving.value = true
+// 保存笔记（由 NoteEditor 的 debounced update 触发）
+async function handleUpdate(payload: { id: number; title: string; content: string }) {
   try {
-    const updated = await updateNote(selectedNote.value.id, { title })
-    selectedNote.value = updated
-    // Refresh list to show updated title/time
-    await loadNotes()
-  } catch (err) {
-    console.error("Failed to update title:", err)
-  } finally {
-    saving.value = false
-  }
-}
-
-// Update content (debounced)
-async function handleUpdateContent(content: string) {
-  if (!selectedNote.value) return
-  if (content === selectedNote.value.content) return
-  selectedNote.value.content = content
-  saving.value = true
-  try {
-    const updated = await updateNote(selectedNote.value.id, { content })
-    selectedNote.value = updated
-    await loadNotes()
-  } catch (err) {
-    console.error("Failed to update content:", err)
-  } finally {
-    saving.value = false
-  }
-}
-
-// Save (explicit button)
-async function handleSave() {
-  if (!selectedNote.value) return
-  saving.value = true
-  try {
-    const updated = await updateNote(selectedNote.value.id, {
-      title: selectedNote.value.title,
-      content: selectedNote.value.content,
+    const updated = await updateNote(payload.id, {
+      title: payload.title,
+      content: payload.content,
     })
+    // 更新本地选中笔记
     selectedNote.value = updated
-    await loadNotes()
+    // 同步列表
+    const idx = notes.value.findIndex((n) => n.id === updated.id)
+    if (idx !== -1) {
+      notes.value[idx] = updated
+    }
   } catch (err) {
-    console.error("Failed to save note:", err)
-  } finally {
-    saving.value = false
+    console.error('保存笔记失败:', err)
   }
 }
 
-// Delete a note
-async function handleDelete(note: Note) {
+// 删除笔记
+async function handleDelete(id: number) {
   try {
-    await deleteNote(note.id)
-    if (selectedId.value === note.id) {
+    await deleteNote(id)
+    if (selectedId.value === id) {
       selectedId.value = null
       selectedNote.value = null
     }
-    await loadNotes()
+    notes.value = notes.value.filter((n) => n.id !== id)
   } catch (err) {
-    console.error("Failed to delete note:", err)
+    console.error('删除笔记失败:', err)
   }
 }
 
@@ -115,19 +132,31 @@ onMounted(() => {
 
 <template>
   <div class="flex h-screen overflow-hidden">
-    <NoteSidebar
-      :notes="notes"
-      :selected-id="selectedId"
-      @select="selectNote"
-      @create="handleCreate"
-      @delete="handleDelete"
-    />
-    <NoteEditor
-      :note="selectedNote"
-      :saving="saving"
-      @update:title="handleUpdateTitle"
-      @update:content="handleUpdateContent"
-      @save="handleSave"
-    />
+    <!-- 左侧边栏 -->
+    <div class="w-72 shrink-0">
+      <NoteSidebar
+        :notes="notes"
+        :selected-id="selectedId"
+        @select="selectNote"
+        @create="handleCreate"
+        @delete="handleDelete"
+      />
+    </div>
+
+    <!-- 右侧编辑器 -->
+    <div class="flex-1 min-w-0">
+      <NoteEditor
+        :note="selectedNote"
+        @update="handleUpdate"
+      />
+    </div>
+
+    <!-- WebSocket 连接状态指示 -->
+    <div
+      v-if="!connected"
+      class="fixed bottom-3 right-3 px-2.5 py-1 rounded-md text-xs font-medium bg-destructive/15 text-destructive border border-destructive/30"
+    >
+      离线
+    </div>
   </div>
 </template>
