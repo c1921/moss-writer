@@ -1,2 +1,7 @@
 .codegraph
 .reasonix
+reasonix.toml
+
+# Backend
+backend/data/
+backend/tmp/
