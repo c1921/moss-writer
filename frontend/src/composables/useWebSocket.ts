@@ -9,7 +9,14 @@ export interface WsMessage {
 
 type MessageHandler = (msg: WsMessage) => void
 
-export function useWebSocket(url: string = 'ws://localhost:8080/ws') {
+function getDefaultWsUrl(): string {
+  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/ws`
+}
+
+export function useWebSocket(url?: string) {
+  const wsUrl = url || getDefaultWsUrl()
   const connected: Ref<boolean> = ref(false)
   let ws: WebSocket | null = null
   let handlers: MessageHandler[] = []
@@ -23,7 +30,7 @@ export function useWebSocket(url: string = 'ws://localhost:8080/ws') {
       return
     }
 
-    ws = new WebSocket(url)
+    ws = new WebSocket(wsUrl)
 
     ws.onopen = () => {
       connected.value = true

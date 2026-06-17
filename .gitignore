@@ -5,3 +5,6 @@ reasonix.toml
 # Backend
 backend/data/
 backend/tmp/
+
+# Docker data volume
+data/

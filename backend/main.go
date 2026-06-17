@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"backend/models"
 
@@ -21,6 +24,14 @@ var (
 	m  *melody.Melody
 )
 
+// envOrDefault 返回环境变量值或默认值
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 // WsMessage WebSocket 消息结构
 type WsMessage struct {
 	Type string       `json:"type"`
@@ -30,14 +41,20 @@ type WsMessage struct {
 
 func initDB() {
 	var err error
-	db, err = gorm.Open(sqlite.Open("data/notes.db"), &gorm.Config{})
+	dbPath := envOrDefault("DB_PATH", "data/notes.db")
+	// 确保数据目录存在
+	dir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Fatalf("创建数据目录失败: %v", err)
+	}
+	db, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 	if err := db.AutoMigrate(&models.Note{}); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
-	log.Println("数据库初始化完成")
+	log.Printf("数据库初始化完成 (%s)", dbPath)
 }
 
 func initMelody() {
@@ -159,11 +176,20 @@ func main() {
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173"},
-		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
-		AllowHeaders: []string{"Content-Type"},
-	}))
+	// CORS：仅当 CORS_ORIGINS 环境变量设置时启用（开发模式）
+	corsOrigins := os.Getenv("CORS_ORIGINS")
+	if corsOrigins != "" {
+		origins := strings.Split(corsOrigins, ",")
+		for i := range origins {
+			origins[i] = strings.TrimSpace(origins[i])
+		}
+		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+			AllowOrigins: origins,
+			AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+			AllowHeaders: []string{"Content-Type"},
+		}))
+		log.Printf("CORS 已启用，允许来源: %v", origins)
+	}
 
 	// RESTful 路由
 	api := e.Group("/api")
@@ -179,8 +205,29 @@ func main() {
 		return m.HandleRequest(c.Response(), c.Request())
 	})
 
+	// SPA 静态文件托管（Docker 模式）
+	spaDir := os.Getenv("SPA_STATIC_DIR")
+	if spaDir != "" {
+		log.Printf("静态文件服务启用: %s", spaDir)
+		// 静态资源（JS/CSS/图片等）
+		e.Static("/assets", filepath.Join(spaDir, "assets"))
+		// 直接访问的根文件
+		e.File("/favicon.svg", filepath.Join(spaDir, "favicon.svg"))
+		e.GET("/", func(c *echo.Context) error {
+			return c.File(filepath.Join(spaDir, "index.html"))
+		})
+		// SPA fallback: 非 API/WS/assets 的路径返回 index.html
+		e.RouteNotFound("/*", func(c *echo.Context) error {
+			path := c.Request().URL.Path
+			if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/ws") || strings.HasPrefix(path, "/assets") {
+				return c.JSON(http.StatusNotFound, map[string]string{"error": "未找到"})
+			}
+			return c.File(filepath.Join(spaDir, "index.html"))
+		})
+	}
+
 	// 启动服务
-	addr := ":8080"
+	addr := ":" + envOrDefault("PORT", "8080")
 	fmt.Printf("服务启动于 http://localhost%s\n", addr)
 	if err := e.Start(addr); err != nil {
 		log.Fatalf("服务启动失败: %v", err)
