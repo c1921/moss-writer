@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { IconMoon, IconSun } from '@tabler/icons-vue'
+import { IconMoon, IconSun, IconSearch, IconTrash } from '@tabler/icons-vue'
 import { useDarkMode } from '@/composables/useDarkMode'
 
 const props = defineProps<{
@@ -94,7 +94,7 @@ function formatTime(iso: string): string {
     <!-- 搜索框 -->
     <div class="px-3 py-2 border-b border-border note-search-input">
       <div class="relative">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <IconSearch :size="14" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         <Input
           ref="searchInputRef"
           v-model="searchQuery"
@@ -129,7 +129,7 @@ function formatTime(iso: string): string {
           class="ml-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
           @click.stop="confirmDelete(note)"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-.867 12.142A2 2 0 0 1 16.138 20H7.862a2 2 0 0 1-1.995-1.858L5 6"/><path d="M10 10v5"/><path d="M14 10v5"/></svg>
+          <IconTrash :size="14" />
         </Button>
       </div>
     </div>
