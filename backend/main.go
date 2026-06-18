@@ -82,6 +82,13 @@ func main() {
 		return ws.HandleRequest(c.Response(), c.Request())
 	})
 
+	// ---- 文件夹路由 ----
+	folders := api.Group("/folders")
+	folders.GET("", handlers.MakeListFolders(store.DB()))
+	folders.POST("", handlers.MakeCreateFolder(store.DB()))
+	folders.PUT("/:id", handlers.MakeRenameFolder(store.DB()))
+	folders.DELETE("/:id", handlers.MakeDeleteFolder(store.DB()))
+
 	// ---- SPA 静态文件托管（Docker 模式） ----
 	if spaDir != "" {
 		log.Printf("静态文件服务启用: %s", spaDir)

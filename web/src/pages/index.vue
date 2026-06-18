@@ -4,9 +4,11 @@ import NoteSidebar from '@/components/NoteSidebar.vue'
 import NoteEditor from '@/components/NoteEditor.vue'
 import { useNotesStore } from '@/stores/notes'
 import { useWebSocketStore } from '@/stores/websocket'
+import { useFoldersStore } from '@/stores/folders'
 
 const notesStore = useNotesStore()
 const wsStore = useWebSocketStore()
+const foldersStore = useFoldersStore()
 
 const sidebarRef = ref<InstanceType<typeof NoteSidebar> | null>(null)
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null)
@@ -31,9 +33,10 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   wsStore.setup()
-  notesStore.loadNotes()
+  await notesStore.loadNotes()
+  await foldersStore.loadFolders()
   window.addEventListener('keydown', onKeyDown)
 })
 

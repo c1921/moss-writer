@@ -15,9 +15,10 @@ var hub *melody.Melody
 
 // WsMessage WebSocket 消息结构（与前端协议对齐）。
 type WsMessage struct {
-	Type string       `json:"type"`
-	Note *models.Note `json:"note,omitempty"`
-	ID   uint         `json:"id,omitempty"`
+	Type   string         `json:"type"`
+	Note   *models.Note   `json:"note,omitempty"`
+	ID     uint           `json:"id,omitempty"`
+	Folder *models.Folder `json:"folder,omitempty"`
 }
 
 // Init 初始化 Melody WebSocket 管理器。

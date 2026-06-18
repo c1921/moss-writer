@@ -116,13 +116,14 @@ export const useNotesStore = defineStore('notes', () => {
     }
   }
 
-  async function handleUpdate(payload: { id: number; title: string; content: string }) {
+  async function handleUpdate(payload: { id: number; title: string; content: string; folder_id?: number | null }) {
     saving.value = true
     saveStatus.value = 'idle'
     try {
       const updated = await updateNote(payload.id, {
         title: payload.title,
         content: payload.content,
+        folder_id: payload.folder_id,
       })
       selectedNote.value = updated
       const idx = notes.value.findIndex((n) => n.id === updated.id)
@@ -138,6 +139,18 @@ export const useNotesStore = defineStore('notes', () => {
     } finally {
       saving.value = false
     }
+  }
+
+  // 设置笔记的文件夹（通过 handleUpdate 发送到后端）
+  async function setNoteFolder(noteId: number, folderId: number | null) {
+    const note = notes.value.find((n) => n.id === noteId)
+    if (!note) return
+    await handleUpdate({
+      id: noteId,
+      title: note.title,
+      content: note.content,
+      folder_id: folderId,
+    })
   }
 
   async function handleDelete(id: number) {
@@ -176,6 +189,7 @@ export const useNotesStore = defineStore('notes', () => {
     selectNote,
     handleCreate,
     handleUpdate,
+    setNoteFolder,
     handleDelete,
     clearError,
     cleanup,

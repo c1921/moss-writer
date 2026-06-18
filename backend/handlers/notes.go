@@ -75,14 +75,19 @@ func MakeUpdateNote(db *gorm.DB) echo.HandlerFunc {
 		var input struct {
 			Title   string `json:"title"`
 			Content string `json:"content"`
+			FolderID *uint `json:"folder_id"`
 		}
 		if err := c.Bind(&input); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "无效的请求体"})
 		}
-		if err := db.Model(&note).Updates(map[string]any{
+		updates := map[string]any{
 			"title":   input.Title,
 			"content": input.Content,
-		}).Error; err != nil {
+		}
+		if input.FolderID != nil {
+			updates["folder_id"] = *input.FolderID
+		}
+		if err := db.Model(&note).Updates(updates).Error; err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 		ws.Broadcast(ws.WsMessage{Type: "note_updated", Note: &note})

@@ -7,6 +7,7 @@ export interface Note {
   content: string
   created_at: string
   updated_at: string
+  folder_id?: number | null
 }
 
 export interface CreateNotePayload {
@@ -17,6 +18,7 @@ export interface CreateNotePayload {
 export interface UpdateNotePayload {
   title: string
   content: string
+  folder_id?: number | null
 }
 
 const client = axios.create({
