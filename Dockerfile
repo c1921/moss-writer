@@ -10,9 +10,9 @@ RUN CGO_ENABLED=0 go build -o /moss-writer .
 FROM node:22-alpine AS frontend-builder
 WORKDIR /src
 RUN corepack enable
-COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+COPY web/package.json web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
-COPY frontend/ ./
+COPY web/ ./
 RUN pnpm build
 
 # 阶段 3：最终运行镜像

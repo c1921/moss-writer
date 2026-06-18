@@ -56,11 +56,11 @@ func main() {
 		log.Printf("CORS 已启用，允许来源: %v", origins)
 	} else if spaDir == "" {
 		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-			AllowOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173"},
+			AllowOrigins: []string{"http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"},
 			AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
 			AllowHeaders: []string{"Content-Type"},
 		}))
-		log.Println("CORS 已自动启用（开发模式），允许来源: localhost:5173")
+		log.Println("CORS 已自动启用（开发模式），允许来源: localhost:5173, localhost:3000")
 	}
 
 	// ---- RESTful 路由 ----
