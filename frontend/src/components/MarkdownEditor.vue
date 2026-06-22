@@ -4,6 +4,7 @@ import Vditor from 'vditor'
 import 'vditor/dist/index.css'
 import '@/assets/vditor-shadcn.css'
 import { useColorMode } from '@vueuse/core'
+import EditorToolbar from './EditorToolbar.vue'
 
 const props = defineProps<{
   modelValue: string
@@ -37,12 +38,7 @@ onMounted(() => {
     cache: {
       enable: false,
     },
-    toolbar: [
-      'emoji', 'headings', 'bold', 'italic', 'strike', '|',
-      'line', 'quote', 'list', 'ordered-list', 'check', '|',
-      'code', 'inline-code', 'undo', 'redo', '|',
-      'link', 'table', '|', 'edit-mode', 'both', 'outline',
-    ],
+    toolbar: [],
     input: (value: string) => {
       emit('update:modelValue', value)
     },
@@ -81,5 +77,8 @@ defineExpose({ vditor, loading })
 </script>
 
 <template>
-  <div ref="editorRef" class="h-full" />
+  <div class="flex flex-col h-full">
+    <EditorToolbar :vditor="vditor" />
+    <div ref="editorRef" class="flex-1 min-h-0" />
+  </div>
 </template>

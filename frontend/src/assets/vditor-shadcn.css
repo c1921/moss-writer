@@ -9,7 +9,7 @@
   /* 边框 */
   --border-color: var(--border);
 
-  /* 工具栏 */
+  /* 工具栏（Vditor 内置空工具栏，CustomToolbar 使用 shadcn-vue 组件） */
   --toolbar-background-color: var(--muted);
   --toolbar-icon-color: var(--muted-foreground);
   --toolbar-icon-hover-color: var(--foreground);
@@ -113,21 +113,6 @@
   background-color: var(--muted);
   border: 1px solid var(--border);
   border-radius: 3px;
-}
-
-/* 工具栏分隔符 */
-.vditor-toolbar__divider {
-  background-color: var(--border);
-}
-
-/* 工具栏按钮悬停 */
-.vditor-toolbar__item .vditor-tooltipped:hover {
-  color: var(--toolbar-icon-hover-color);
-}
-
-/* 工具栏按钮激活态 */
-.vditor-toolbar__item .vditor-menu--current {
-  color: var(--primary);
 }
 
 /* 弹出面板箭头 */
