@@ -18,8 +18,6 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-let suppressListener = false
-
 const { loading, get } = useEditor((container) => {
   return Editor.make()
     .config((ctx) => {
@@ -28,7 +26,6 @@ const { loading, get } = useEditor((container) => {
 
       // 监听 markdown 变化 → 通知父组件
       ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
-        if (suppressListener) return
         emit('update:modelValue', markdown)
       })
     })
@@ -50,13 +47,11 @@ watch(
     const currentMd = editor.action(getMarkdown())
     if (currentMd === val) return
 
-    suppressListener = true
     editor.action(replaceAll(val))
-    suppressListener = false
   }
 )
 
-// 编辑器就绪后，推送初始内容（仅当内容确实不同时）
+// 编辑器就绪后，推送初始内容
 watch(loading, (isLoading) => {
   if (!isLoading) {
     const editor = get()
@@ -64,9 +59,7 @@ watch(loading, (isLoading) => {
       const currentMd = editor.action(getMarkdown())
       if (currentMd === props.modelValue) return
 
-      suppressListener = true
       editor.action(replaceAll(props.modelValue))
-      suppressListener = false
     }
   }
 })

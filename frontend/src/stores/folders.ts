@@ -13,13 +13,14 @@ function buildTree(folders: Folder[], notes: Note[]): TreeNode[] {
   const map = new Map<number, TreeNode>()
   const roots: TreeNode[] = []
 
-  // 1. 创建所有文件夹节点
-  for (const f of folders) {
+  // 1. 创建所有文件夹节点（按 id 排序，保证稳定顺序）
+  const sortedFolders = [...folders].sort((a, b) => a.id - b.id)
+  for (const f of sortedFolders) {
     map.set(f.id, { id: f.id, name: f.name, type: 'folder', children: [] })
   }
 
   // 2. 建立文件夹父子关系
-  for (const f of folders) {
+  for (const f of sortedFolders) {
     const node = map.get(f.id)!
     if (f.parent_id != null && map.has(f.parent_id)) {
       map.get(f.parent_id)!.children.push(node)
@@ -28,9 +29,10 @@ function buildTree(folders: Folder[], notes: Note[]): TreeNode[] {
     }
   }
 
-  // 3. 将笔记作为叶子节点挂到对应文件夹下
+  // 3. 将笔记作为叶子节点挂到对应文件夹下（按 id 排序，保证稳定顺序）
+  const sortedNotes = [...notes].sort((a, b) => a.id - b.id)
   const notesByFolder = new Map<number | null, Note[]>()
-  for (const n of notes) {
+  for (const n of sortedNotes) {
     const key = n.folder_id
     if (!notesByFolder.has(key)) notesByFolder.set(key, [])
     notesByFolder.get(key)!.push(n)

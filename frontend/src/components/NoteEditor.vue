@@ -35,10 +35,16 @@ watch(
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
+/** 内容是否相对当前选中笔记有未保存的修改 */
+function hasUnsavedChanges(): boolean {
+  if (!props.note) return false
+  return title.value !== props.note.title || content.value !== props.note.content
+}
+
 function scheduleSave() {
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
-    if (props.note) {
+    if (props.note && hasUnsavedChanges()) {
       emit('update', {
         id: props.note.id,
         title: title.value,
@@ -53,13 +59,14 @@ function onTitleChange() {
 }
 
 function onContentChange(v: string) {
+  if (v === content.value) return
   content.value = v
   scheduleSave()
 }
 
 function saveNow() {
   if (saveTimer) clearTimeout(saveTimer)
-  if (props.note) {
+  if (props.note && hasUnsavedChanges()) {
     emit('update', {
       id: props.note.id,
       title: title.value,
