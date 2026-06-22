@@ -3,6 +3,8 @@
 
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@/assets/milkdown-nord.css";
+@import "@milkdown/kit/prose/view/style/prosemirror.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -121,4 +123,68 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Milkdown nord 主题表格暗色适配 + 亮色显式修复 */
+
+/* 亮色模式：奇数列表格单元格浅灰底色 */
+.milkdown-theme-nord.prose :where(td, th):nth-child(odd) {
+  background-color: oklch(0.97 0.002 248);
+}
+/* 暗色模式 */
+.dark .milkdown-theme-nord.prose :where(td, th):nth-child(odd) {
+  background-color: oklch(0.21 0.034 265);
+}
+
+/* 亮色：表格行边框 */
+.milkdown-theme-nord.prose tr {
+  border-color: oklch(0.928 0.006 264);
+}
+/* 暗色：表格行边框 */
+.dark .milkdown-theme-nord.prose tr {
+  border-color: oklch(0.446 0.03 257);
+}
+
+/* 代码块背景 */
+.milkdown-theme-nord pre {
+  background-color: oklch(0.967 0.003 264);
+}
+.dark .milkdown-theme-nord pre {
+  background-color: oklch(0.278 0.033 257);
+}
+
+/* 内联代码背景 */
+.milkdown-theme-nord code {
+  background-color: oklch(0.928 0.006 264);
+}
+.dark .milkdown-theme-nord code {
+  background-color: oklch(0.373 0.034 260);
+}
+
+/* 选中单元格高亮 */
+.milkdown-theme-nord.prose.ProseMirror .selectedCell:after {
+  background-color: oklch(0.75 0.06 230 / 30%);
+}
+
+/* Milkdown 编辑器滚动条 */
+[data-milkdown-root] {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.928 0.006 264) transparent;
+}
+.dark [data-milkdown-root] {
+  scrollbar-color: oklch(0.373 0.034 260) transparent;
+}
+
+[data-milkdown-root]::-webkit-scrollbar {
+  width: 6px;
+}
+[data-milkdown-root]::-webkit-scrollbar-track {
+  background: transparent;
+}
+[data-milkdown-root]::-webkit-scrollbar-thumb {
+  background: oklch(0.928 0.006 264);
+  border-radius: 3px;
+}
+.dark [data-milkdown-root]::-webkit-scrollbar-thumb {
+  background: oklch(0.373 0.034 260);
 }

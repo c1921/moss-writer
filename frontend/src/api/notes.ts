@@ -12,8 +12,8 @@ export function getNote(id: number): Promise<Note> {
 }
 
 /** 创建笔记 */
-export function createNote(title?: string, folderId?: number): Promise<Note> {
-  return api.post<Note>('/notes', { title, folder_id: folderId ?? null })
+export function createNote(title: string, content?: string, folderId?: number): Promise<Note> {
+  return api.post<Note>('/notes', { title, content: content ?? '', folder_id: folderId ?? null })
 }
 
 /** 更新笔记 */

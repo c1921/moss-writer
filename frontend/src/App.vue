@@ -1,18 +1,14 @@
-<script lang="ts">
-export const description = "A sidebar with a collapsible file tree."
-export const iframeHeight = "800px"
-</script>
-
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
 import AppSidebar from "@/components/AppSidebar.vue"
+import NoteEditor from "@/components/NoteEditor.vue"
 import { useFolderSync } from "@/composables/useFolderSync"
+import { useNotes } from "@/composables/useNotes"
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -22,11 +18,51 @@ import {
 } from "@/components/ui/sidebar"
 
 useFolderSync()
+
+const {
+  selectedNote,
+  saving,
+  saveStatus,
+  connected,
+  selectNote,
+  handleCreate,
+  handleUpdate,
+  errorMessage,
+  clearError,
+} = useNotes()
+
+// 组件引用（用于键盘快捷键）
+const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null)
+
+// 键盘快捷键
+function onKeyDown(e: KeyboardEvent) {
+  const mod = e.ctrlKey || e.metaKey
+  if (!mod) return
+
+  switch (e.key.toLowerCase()) {
+    case 'n':
+      e.preventDefault()
+      handleCreate()
+      break
+    case 's':
+      e.preventDefault()
+      editorRef.value?.saveNow()
+      break
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeyDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown)
+})
 </script>
 
 <template>
   <SidebarProvider>
-    <AppSidebar />
+    <AppSidebar @select="selectNote" />
     <SidebarInset>
       <header class="flex h-16 shrink-0 items-center gap-2 border-b px-4">
         <SidebarTrigger class="-ml-1" />
@@ -35,30 +71,43 @@ useFolderSync()
           <BreadcrumbList>
             <BreadcrumbItem class="hidden md:block">
               <BreadcrumbLink href="#">
-                components
+                {{ selectedNote?.title || '笔记' }}
               </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator class="hidden md:block" />
-            <BreadcrumbItem class="hidden md:block">
-              <BreadcrumbLink href="#">
-                ui
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator class="hidden md:block" />
-            <BreadcrumbItem>
-              <BreadcrumbPage>button.tsx</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
       </header>
-      <div class="flex flex-1 flex-col gap-4 p-4">
-        <div class="grid auto-rows-min gap-4 md:grid-cols-3">
-          <div class="bg-muted/50 aspect-video rounded-xl" />
-          <div class="bg-muted/50 aspect-video rounded-xl" />
-          <div class="bg-muted/50 aspect-video rounded-xl" />
-        </div>
-        <div class="bg-muted/50 min-h-[100vh] flex-1 rounded-xl md:min-h-min" />
+      <div class="flex-1 overflow-hidden">
+        <NoteEditor
+          ref="editorRef"
+          :note="selectedNote"
+          :saving="saving"
+          :save-status="saveStatus"
+          @update="handleUpdate"
+        />
       </div>
     </SidebarInset>
+
+    <!-- WebSocket 连接状态指示 -->
+    <div
+      v-if="!connected"
+      class="fixed bottom-3 right-3 px-2.5 py-1 rounded-md text-xs font-medium bg-destructive/15 text-destructive border border-destructive/30"
+    >
+      离线
+    </div>
+
+    <!-- 错误通知 -->
+    <div
+      v-if="errorMessage"
+      class="fixed bottom-3 left-1/2 -translate-x-1/2 px-4 py-2 rounded-md text-sm font-medium bg-destructive/15 text-destructive border border-destructive/30 flex items-center gap-3 shadow-lg max-w-lg"
+    >
+      <span class="truncate">{{ errorMessage }}</span>
+      <button
+        class="shrink-0 hover:text-destructive/70 transition-colors"
+        @click="clearError"
+      >
+        ✕
+      </button>
+    </div>
   </SidebarProvider>
 </template>

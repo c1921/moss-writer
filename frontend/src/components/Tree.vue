@@ -13,6 +13,10 @@ import {
 } from '@/components/ui/sidebar'
 import type { TreeNode } from '@/api/types'
 
+const emit = defineEmits<{
+  select: [id: number]
+}>()
+
 defineProps<{
   item: TreeNode
 }>()
@@ -20,7 +24,7 @@ defineProps<{
 
 <template>
   <!-- 笔记：叶子节点（文件图标，无折叠） -->
-  <SidebarMenuButton v-if="item.type === 'note'" class="data-[active=true]:bg-transparent">
+  <SidebarMenuButton v-if="item.type === 'note'" class="data-[active=true]:bg-transparent" @click="emit('select', item.id)">
     <File />
     {{ item.name }}
   </SidebarMenuButton>
@@ -39,7 +43,7 @@ defineProps<{
       </CollapsibleTrigger>
       <CollapsibleContent>
         <SidebarMenuSub v-if="item.children.length > 0">
-          <Tree v-for="child in item.children" :key="child.id" :item="child" />
+          <Tree v-for="child in item.children" :key="child.id" :item="child" @select="(id: number) => emit('select', id)" />
         </SidebarMenuSub>
       </CollapsibleContent>
     </Collapsible>
