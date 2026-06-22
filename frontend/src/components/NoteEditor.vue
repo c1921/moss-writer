@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { MilkdownProvider } from '@milkdown/vue'
 import type { Note } from '@/api/types'
 import { Input } from '@/components/ui/input'
 import MarkdownEditor from './MarkdownEditor.vue'
@@ -104,12 +103,10 @@ defineExpose({ saveNow })
         >已保存</span>
       </div>
       <div class="flex-1 overflow-hidden">
-        <MilkdownProvider>
-          <MarkdownEditor
-            :model-value="content"
-            @update:model-value="onContentChange"
-          />
-        </MilkdownProvider>
+        <MarkdownEditor
+          :model-value="content"
+          @update:model-value="onContentChange"
+        />
       </div>
     </template>
   </div>

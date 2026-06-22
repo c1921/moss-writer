@@ -1,14 +1,8 @@
 <script setup lang="ts">
-import { watch } from 'vue'
-import { Milkdown, useEditor } from '@milkdown/vue'
-import { Editor, rootCtx } from '@milkdown/kit/core'
-import { commonmark } from '@milkdown/kit/preset/commonmark'
-import { gfm } from '@milkdown/kit/preset/gfm'
-import { history } from '@milkdown/kit/plugin/history'
-import { clipboard } from '@milkdown/kit/plugin/clipboard'
-import { listener, listenerCtx } from '@milkdown/kit/plugin/listener'
-import { nord } from '@milkdown/theme-nord'
-import { replaceAll, getMarkdown } from '@milkdown/kit/utils'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
+import Vditor from 'vditor'
+import 'vditor/dist/index.css'
+import { useDarkMode } from '@/composables/useDarkMode'
 
 const props = defineProps<{
   modelValue: string
@@ -18,55 +12,65 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-const { loading, get } = useEditor((container) => {
-  return Editor.make()
-    .config((ctx) => {
-      ctx.set(rootCtx, container)
-      nord(ctx)
+const { isDark } = useDarkMode()
 
-      // 监听 markdown 变化 → 通知父组件
-      ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
-        emit('update:modelValue', markdown)
-      })
-    })
-    .use(commonmark)
-    .use(gfm)
-    .use(history)
-    .use(clipboard)
-    .use(listener)
+const editorRef = ref<HTMLDivElement>()
+const vditor = ref<Vditor | null>(null)
+const loading = ref(true)
+
+onMounted(() => {
+  if (!editorRef.value) return
+
+  loading.value = true
+
+  vditor.value = new Vditor(editorRef.value, {
+    mode: 'ir',
+    value: props.modelValue || '',
+    theme: isDark.value ? 'dark' : 'classic',
+    placeholder: '开始写作…',
+    cache: {
+      enable: false,
+    },
+    toolbar: [
+      'emoji', 'headings', 'bold', 'italic', 'strike', '|',
+      'line', 'quote', 'list', 'ordered-list', 'check', '|',
+      'code', 'inline-code', 'undo', 'redo', '|',
+      'link', 'table', '|', 'edit-mode', 'both', 'outline',
+    ],
+    input: (value: string) => {
+      emit('update:modelValue', value)
+    },
+    after: () => {
+      loading.value = false
+    },
+  })
 })
 
-// 外部内容变化 → 同步到编辑器（仅当内容确实不同时才更新，避免回音循环破坏选区）
+// 外部内容变化 → 同步到编辑器（仅当内容确实不同时才更新，避免回音循环）
 watch(
   () => props.modelValue,
   (val) => {
-    const editor = get()
-    if (!editor) return
-
-    // 与编辑器当前内容比对，相同则跳过
-    const currentMd = editor.action(getMarkdown())
+    const v = vditor.value
+    if (!v) return
+    const currentMd = v.getValue()
     if (currentMd === val) return
-
-    editor.action(replaceAll(val))
-  }
+    v.setValue(val)
+  },
 )
 
-// 编辑器就绪后，推送初始内容
-watch(loading, (isLoading) => {
-  if (!isLoading) {
-    const editor = get()
-    if (editor && props.modelValue !== undefined) {
-      const currentMd = editor.action(getMarkdown())
-      if (currentMd === props.modelValue) return
-
-      editor.action(replaceAll(props.modelValue))
-    }
-  }
+// 暗色主题同步
+watch(isDark, (dark) => {
+  vditor.value?.setTheme(dark ? 'dark' : 'classic')
 })
 
-defineExpose({ get, loading })
+onUnmounted(() => {
+  vditor.value?.destroy()
+  vditor.value = null
+})
+
+defineExpose({ vditor, loading })
 </script>
 
 <template>
-  <Milkdown class="h-full overflow-auto px-6 py-4" />
+  <div ref="editorRef" class="h-full" />
 </template>
