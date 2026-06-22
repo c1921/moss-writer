@@ -1,16 +1,17 @@
 # Moss Writer
 
-自托管 Markdown 笔记应用。Go 后端 + Vue 3 前端，支持实时同步、全文搜索、暗色模式，一行 Docker 命令即可部署。
+自托管 Markdown 笔记应用。Go 后端 + Vue 3 前端，支持实时同步、全文搜索、文件夹组织、暗色模式，一行 Docker 命令即可部署。
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
 | 后端 | Go + Echo v5 + GORM + SQLite |
-| 前端 | Vue 3 + TypeScript + Vite + UnoCSS |
+| 前端 | Vue 3 + TypeScript + Vite + Tailwind CSS v4 |
 | 编辑器 | Milkdown (ProseMirror 内核) |
-| UI 组件 | Vuetify0 (headless) |
-| 实时同步 | WebSocket (Melody) |
+| UI 组件 | shadcn/vue (reka-ui) |
+| 图标 | Lucide Vue |
+| 实时同步 | WebSocket |
 | 部署 | Docker + docker-compose |
 
 ## 快速开始
@@ -24,13 +25,13 @@ go run .
 # → http://localhost:8080
 
 # 终端 2：前端
-cd web
+cd frontend
 pnpm install
 pnpm dev
-# → http://localhost:3000
+# → http://localhost:5173
 ```
 
-前端 `.env.development` 已配置指向 `localhost:8080`，开箱即用。后端 CORS 已自动允许 `localhost:3000`。
+前端开发模式下 Vite 自动代理 `/api` 和 `/ws` 到后端（`localhost:8080`），无需额外配置。后端 CORS 已自动允许 `localhost:5173` 和 `localhost:3000`。
 
 ### Docker 部署
 
@@ -49,6 +50,7 @@ PORT=3000 docker compose up --build
 ## 功能
 
 - **Markdown 编辑** — Milkdown (ProseMirror) 所见即所得编辑器
+- **文件夹组织** — 树形文件夹结构管理笔记
 - **实时同步** — 多标签页/多设备间 WebSocket 推送
 - **全文搜索** — 按标题和内容即时过滤
 - **暗色模式** — 手动切换 / 跟随系统偏好
@@ -64,21 +66,56 @@ moss-writer/
 │   ├── main.go              # 入口：路由组装、优雅关闭
 │   ├── store/db.go          # SQLite 连接与自动迁移
 │   ├── ws/hub.go            # WebSocket 管理与广播
-│   ├── handlers/notes.go    # CRUD handler（闭包注入依赖）
-│   ├── models/note.go       # Note GORM 模型
+│   ├── handlers/            # CRUD handler（闭包注入依赖）
+│   │   ├── notes.go         # 笔记 CRUD
+│   │   ├── folders.go       # 文件夹 CRUD
+│   │   └── settings.go      # 键值设置
+│   ├── models/
+│   │   ├── note.go          # Note GORM 模型
+│   │   └── folder.go        # Folder GORM 模型
 │   └── data/                # SQLite 数据库（已 gitignore）
-├── web/
+├── frontend/
 │   ├── src/
-│   │   ├── api/notes.ts            # REST API 封装
-│   │   ├── stores/                 # Pinia stores（notes / websocket / theme）
+│   │   ├── api/                     # REST API 封装
+│   │   │   ├── index.ts             # 基础 fetch 封装
+│   │   │   ├── types.ts             # 类型定义
+│   │   │   ├── notes.ts             # 笔记 API
+│   │   │   ├── folders.ts           # 文件夹 API
+│   │   │   └── settings.ts          # 设置 API
 │   │   ├── components/
-│   │   │   ├── NoteSidebar.vue     # 侧边栏：列表、搜索、暗色切换
-│   │   │   ├── NoteEditor.vue      # 编辑器：标题栏 + Milkdown
-│   │   │   └── MarkdownEditor.vue  # Milkdown 编辑器封装
-│   │   └── pages/index.vue         # 主页面
-│   ├── unocss.config.ts            # UnoCSS 配置（含图标预设）
-│   └── .env.development            # 开发环境变量
-├── Dockerfile              # 多阶段构建（web/ 构建前端）
+│   │   │   ├── AppSidebar.vue       # 侧边栏：文件夹树、搜索、暗色切换
+│   │   │   ├── NoteEditor.vue       # 编辑器：标题栏 + Milkdown
+│   │   │   ├── MarkdownEditor.vue   # Milkdown 编辑器封装
+│   │   │   ├── Tree.vue             # 递归树形组件
+│   │   │   ├── ModeToggle.vue       # 暗色模式切换
+│   │   │   └── ui/                  # shadcn/vue 风格原子组件
+│   │   │       ├── button/
+│   │   │       ├── input/
+│   │   │       ├── sidebar/
+│   │   │       ├── sheet/
+│   │   │       ├── dropdown-menu/
+│   │   │       ├── collapsible/
+│   │   │       ├── breadcrumb/
+│   │   │       ├── separator/
+│   │   │       ├── tooltip/
+│   │   │       └── skeleton/
+│   │   ├── composables/            # Vue 组合式函数
+│   │   │   ├── useNotes.ts         # 笔记状态与操作
+│   │   │   ├── useWebSocket.ts     # WebSocket 连接与事件
+│   │   │   ├── useFolderSync.ts    # 文件夹树同步
+│   │   │   └── useDarkMode.ts      # 暗色模式切换
+│   │   ├── stores/
+│   │   │   └── folders.ts          # Pinia store（文件夹树状态）
+│   │   ├── lib/
+│   │   │   └── utils.ts            # 工具函数
+│   │   ├── assets/
+│   │   │   └── milkdown-nord.css   # Milkdown Nord 主题
+│   │   ├── App.vue                 # 根组件
+│   │   ├── main.ts                 # 入口（Pinia 挂载）
+│   │   └── style.css               # 全局样式（Tailwind 入口）
+│   ├── vite.config.ts              # Vite 配置（含 /api、/ws 代理）
+│   └── .env.development            # 可选开发环境变量
+├── Dockerfile              # 多阶段构建（frontend/ 构建前端）
 ├── docker-compose.yml      # 单服务编排
 └── .dockerignore
 ```
@@ -92,6 +129,10 @@ moss-writer/
 | `POST` | `/api/notes` | 创建笔记 |
 | `PUT` | `/api/notes/:id` | 更新笔记 |
 | `DELETE` | `/api/notes/:id` | 删除笔记 |
+| `GET` | `/api/folders` | 文件夹树 |
+| `POST` | `/api/folders` | 创建文件夹 |
+| `PUT` | `/api/folders/:id` | 重命名文件夹 |
+| `DELETE` | `/api/folders/:id` | 删除文件夹 |
 | `GET` | `/api/settings/:key` | 读取设置 |
 | `PUT` | `/api/settings/:key` | 写入设置 |
 | WebSocket | `/ws` | 实时推送 `note_created/updated/deleted` |
@@ -109,5 +150,5 @@ moss-writer/
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `VITE_API_BASE_URL` | `/api` | 后端 API 地址。开发模式在 `.env.development` 中设为 `http://localhost:8080/api` |
-| `VITE_WS_URL` | 自动推导 | WebSocket 地址。开发模式在 `.env.development` 中设为 `ws://localhost:8080/ws` |
+| `VITE_API_BASE_URL` | `/api` | 后端 API 地址。开发模式使用 Vite proxy，无需额外配置 |
+| `VITE_WS_URL` | 自动推导 | WebSocket 地址。开发模式使用 Vite proxy，无需额外配置 |
