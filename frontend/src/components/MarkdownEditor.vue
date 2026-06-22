@@ -2,7 +2,8 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import Vditor from 'vditor'
 import 'vditor/dist/index.css'
-import { useDarkMode } from '@/composables/useDarkMode'
+import '@/assets/vditor-shadcn.css'
+import { useColorMode } from '@vueuse/core'
 
 const props = defineProps<{
   modelValue: string
@@ -12,7 +13,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-const { isDark } = useDarkMode()
+const mode = useColorMode()
 
 const editorRef = ref<HTMLDivElement>()
 const vditor = ref<Vditor | null>(null)
@@ -26,7 +27,12 @@ onMounted(() => {
   vditor.value = new Vditor(editorRef.value, {
     mode: 'ir',
     value: props.modelValue || '',
-    theme: isDark.value ? 'dark' : 'classic',
+    theme: mode.value === 'dark' ? 'dark' : 'classic',
+    preview: {
+      theme: {
+        current: mode.value === 'dark' ? 'dark' : 'light',
+      },
+    },
     placeholder: '开始写作…',
     cache: {
       enable: false,
@@ -58,9 +64,12 @@ watch(
   },
 )
 
-// 暗色主题同步
-watch(isDark, (dark) => {
-  vditor.value?.setTheme(dark ? 'dark' : 'classic')
+// 暗色主题同步（跟随 @vueuse/core 的 useColorMode）
+watch(mode, (val) => {
+  const v = vditor.value
+  if (!v) return
+  const dark = val === 'dark'
+  v.setTheme(dark ? 'dark' : 'classic', dark ? 'dark' : 'light')
 })
 
 onUnmounted(() => {

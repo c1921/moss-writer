@@ -1,0 +1,151 @@
+/* Vditor 主题适配 shadcn-vue
+ * 将 Vditor 内部 CSS 变量映射到 style.css 中的 shadcn token，
+ * 使编辑器外观与 shadcn-vue 组件一致，自动跟随亮色/暗色切换。
+ */
+
+/* ===== 编辑器外壳（CSS 变量覆盖） ===== */
+
+.vditor {
+  /* 边框 */
+  --border-color: var(--border);
+
+  /* 工具栏 */
+  --toolbar-background-color: var(--muted);
+  --toolbar-icon-color: var(--muted-foreground);
+  --toolbar-icon-hover-color: var(--foreground);
+  --toolbar-height: 35px;
+  --toolbar-divider-margin-top: 8px;
+
+  /* 编辑区 */
+  --textarea-background-color: var(--background);
+  --textarea-text-color: var(--foreground);
+
+  /* 弹出面板 */
+  --panel-background-color: var(--background);
+  --panel-shadow: 0 1px 2px color-mix(in oklch, var(--border), transparent 60%);
+
+  /* 通用 */
+  --second-color: color-mix(in oklch, var(--muted-foreground), transparent 64%);
+  --heading-border-color: var(--border);
+  --blockquote-color: var(--muted-foreground);
+
+  /* 计数器 */
+  --count-background-color: color-mix(in oklch, var(--primary), transparent 90%);
+
+  /* IR 模式语法高亮 */
+  --ir-heading-color: var(--primary);
+  --ir-title-color: var(--muted-foreground);
+  --ir-bi-color: var(--primary);
+  --ir-link-color: hsl(210, 100%, 40%);
+  --ir-bracket-color: var(--muted-foreground);
+  --ir-paren-color: var(--muted-foreground);
+
+  /* 调整大小 */
+  --resize-icon-color: var(--muted-foreground);
+  --resize-background-color: var(--muted);
+  --resize-hover-icon-color: var(--foreground);
+  --resize-hover-background-color: color-mix(in oklch, var(--primary), transparent 90%);
+}
+
+/* 暗色模式仅需覆盖差异项，其余自动继承父级变量 */
+.vditor--dark {
+  --ir-link-color: hsl(210, 80%, 65%);
+}
+
+/* ===== Vditor 容器样式覆盖 ===== */
+
+.vditor {
+  border-radius: calc(var(--radius) - 2px);
+  border-color: var(--border);
+}
+
+/* ===== 内容渲染区（.vditor-reset）覆盖 ===== */
+
+.vditor-reset {
+  color: var(--foreground);
+  font-family: inherit;
+}
+
+.vditor-reset h1,
+.vditor-reset h2 {
+  border-bottom-color: var(--border);
+}
+
+.vditor-reset hr {
+  background-color: var(--border);
+}
+
+.vditor-reset blockquote {
+  color: var(--muted-foreground);
+  border-left-color: var(--border);
+}
+
+.vditor-reset pre {
+  background-color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.vditor-reset code {
+  background-color: var(--muted);
+  border-radius: 3px;
+}
+
+.vditor-reset table {
+  border-color: var(--border);
+}
+
+.vditor-reset th,
+.vditor-reset td {
+  border-color: var(--border);
+}
+
+.vditor-reset th {
+  background-color: var(--muted);
+}
+
+.vditor-reset a {
+  color: var(--primary);
+}
+
+/* 编辑器内联代码 */
+.vditor-ir__marker--pre code {
+  background-color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+/* 工具栏分隔符 */
+.vditor-toolbar__divider {
+  background-color: var(--border);
+}
+
+/* 工具栏按钮悬停 */
+.vditor-toolbar__item .vditor-tooltipped:hover {
+  color: var(--toolbar-icon-hover-color);
+}
+
+/* 工具栏按钮激活态 */
+.vditor-toolbar__item .vditor-menu--current {
+  color: var(--primary);
+}
+
+/* 弹出面板箭头 */
+.vditor-panel--arrow {
+  background-color: var(--panel-background-color);
+  border-color: var(--border);
+}
+
+/* 大纲面板 */
+.vditor-outline {
+  border-color: var(--border);
+}
+
+.vditor-outline__title {
+  border-bottom-color: var(--border);
+}
+
+.vditor-outline__item:hover {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
