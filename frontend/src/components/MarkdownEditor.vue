@@ -31,7 +31,7 @@ onMounted(() => {
     theme: mode.value === 'dark' ? 'dark' : 'classic',
     preview: {
       theme: {
-        current: mode.value === 'dark' ? 'dark' : 'light',
+        current: '',
       },
     },
     placeholder: '开始写作…',
@@ -64,8 +64,7 @@ watch(
 watch(mode, (val) => {
   const v = vditor.value
   if (!v) return
-  const dark = val === 'dark'
-  v.setTheme(dark ? 'dark' : 'classic', dark ? 'dark' : 'light')
+  v.setTheme(val === 'dark' ? 'dark' : 'classic')
 })
 
 onUnmounted(() => {

@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import {
   Bold, Italic, Strikethrough,
   Code, CodeXml, TextQuote,
   Link2, List, ListOrdered, SquareCheck,
   Undo2, Redo2,
   Heading, Minus, Table2,
-  BookOpen, WrapText, Eye,
+  BookOpen, Eye,
   Pilcrow, IndentIncrease, IndentDecrease,
+  Pen, PanelRightOpen,
 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -28,11 +30,75 @@ const props = defineProps<{
   vditor: any
 }>()
 
-// ---------- 选区工具 ----------
+// ---------- 编辑模式 ----------
+
+type EditMode = 'wysiwyg' | 'ir' | 'sv'
+
+const currentMode = ref<EditMode>('ir')
 
 function getV() {
   return props.vditor
 }
+
+function switchEditMode(mode: EditMode) {
+  const v = getV()
+  if (!v) return
+  const iv = v.vditor
+  if (!iv || iv.currentMode === mode) return
+
+  // 获取当前内容
+  const markdown = v.getValue()
+
+  // 隐藏所有编辑面板
+  iv.ir.element.parentElement.style.display = 'none'
+  iv.wysiwyg.element.parentElement.style.display = 'none'
+  iv.sv.element.style.display = 'none'
+  iv.preview.element.style.display = 'none'
+
+  // 配置 Lute 模式
+  iv.lute.SetVditorIR(mode === 'ir')
+  iv.lute.SetVditorWYSIWYG(mode === 'wysiwyg')
+  iv.lute.SetVditorSV(mode === 'sv')
+
+  // 显示目标面板并渲染内容
+  if (mode === 'ir') {
+    iv.ir.element.parentElement.style.display = 'block'
+    iv.ir.element.innerHTML = iv.lute.Md2VditorIRDOM(markdown)
+  } else if (mode === 'wysiwyg') {
+    iv.wysiwyg.element.parentElement.style.display = 'block'
+    iv.wysiwyg.element.innerHTML = iv.lute.Md2VditorDOM(markdown)
+  } else if (mode === 'sv') {
+    iv.sv.element.style.display = 'block'
+    const svHTML = iv.lute.SpinVditorSVDOM(markdown)
+    iv.sv.element.innerHTML = svHTML || ''
+  }
+
+  iv.currentMode = mode
+  currentMode.value = mode
+
+  // 更新大纲
+  iv.outline.toggle(iv, mode !== 'sv' && !!iv.options.outline?.enable, true)
+}
+
+// ---------- SV 模式预览切换 ----------
+
+/** 在 SV 模式下切换预览面板显隐 */
+function toggleSVPreview() {
+  const v = getV()
+  if (!v) return
+  const iv = v.vditor
+  if (iv.currentMode !== 'sv') return
+
+  const previewEl = iv.preview.element
+  if (previewEl.style.display === 'none' || !previewEl.style.display) {
+    previewEl.style.display = 'block'
+    iv.preview.render(iv)
+  } else {
+    previewEl.style.display = 'none'
+  }
+}
+
+// ---------- 选区工具 ----------
 
 function wrapSelected(prefix: string, suffix: string) {
   const v = getV()
@@ -86,11 +152,17 @@ function insertList(prefix: string) {
 // ---------- 编辑操作 ----------
 
 function undo() {
-  document.execCommand('undo')
+  const v = getV()
+  if (!v) return
+  v.vditor.ir?.undo?.()
+  v.vditor.wysiwyg?.undo?.()
 }
 
 function redo() {
-  document.execCommand('redo')
+  const v = getV()
+  if (!v) return
+  v.vditor.ir?.redo?.()
+  v.vditor.wysiwyg?.redo?.()
 }
 
 function toggleOutline() {
@@ -287,22 +359,60 @@ function toggleOutline() {
 
       <Separator orientation="vertical" class="mx-1 h-5" />
 
-      <!-- 视图 -->
+      <!-- 编辑模式 -->
       <Tooltip>
         <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon-sm" @click="vditor?.setPreviewMode('both')" :disabled="!vditor">
-            <Eye class="size-4" />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            :disabled="!vditor"
+            :class="{ 'bg-primary/15 text-primary!': currentMode === 'wysiwyg' }"
+            @click="switchEditMode('wysiwyg')"
+          >
+            <Pen class="size-4" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">预览</TooltipContent>
+        <TooltipContent side="bottom">所见即所得</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger as-child>
-          <Button variant="ghost" size="icon-sm" @click="vditor?.setPreviewMode('editor')" :disabled="!vditor">
-            <WrapText class="size-4" />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            :disabled="!vditor"
+            :class="{ 'bg-primary/15 text-primary!': currentMode === 'ir' }"
+            @click="switchEditMode('ir')"
+          >
+            <Pilcrow class="size-4" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">编辑模式</TooltipContent>
+        <TooltipContent side="bottom">即时渲染</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            :disabled="!vditor"
+            :class="{ 'bg-primary/15 text-primary!': currentMode === 'sv' }"
+            @click="switchEditMode('sv')"
+          >
+            <PanelRightOpen class="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">分屏预览</TooltipContent>
+      </Tooltip>
+
+      <Separator orientation="vertical" class="mx-1 h-5" />
+
+      <!-- 视图（仅在 SV 模式下可切换预览） -->
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button variant="ghost" size="icon-sm" @click="toggleSVPreview" :disabled="!vditor || currentMode !== 'sv'">
+            <Eye class="size-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">SV 预览</TooltipContent>
       </Tooltip>
       <Tooltip>
         <TooltipTrigger as-child>

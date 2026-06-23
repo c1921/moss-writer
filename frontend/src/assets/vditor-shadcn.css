@@ -121,7 +121,57 @@
   border-color: var(--border);
 }
 
-/* 大纲面板 */
+/* ===== WYSIWYG 模式覆盖 ===== */
+
+.vditor-wysiwyg pre.vditor-reset {
+  font-family: inherit;
+  line-height: inherit;
+}
+
+.vditor-wysiwyg pre.vditor-reset:focus {
+  background-color: var(--textarea-background-color);
+}
+
+.vditor-wysiwyg a {
+  color: var(--primary);
+}
+
+/* ===== SV（分屏预览/源码）模式覆盖 ===== */
+
+.vditor-sv {
+  font-family: inherit;
+  line-height: inherit;
+  background-color: var(--textarea-background-color);
+  color: var(--textarea-text-color);
+}
+
+.vditor-sv:focus {
+  background-color: var(--textarea-background-color);
+}
+
+.vditor-sv .mark:not(.vditor-sv__marker) {
+  background-color: color-mix(in oklch, var(--primary), transparent 85%);
+  color: var(--foreground);
+}
+
+/* SV 语法标记使用与 IR 相同的颜色变量 */
+.vditor-sv__marker {
+  color: var(--second-color);
+}
+
+.vditor-sv__marker--heading {
+  color: var(--ir-heading-color);
+}
+
+.vditor-sv__marker--bi {
+  color: var(--ir-bi-color);
+}
+
+.vditor-sv__marker--link {
+  color: var(--ir-link-color);
+}
+
+/* ===== 大纲面板 ===== */
 .vditor-outline {
   border-color: var(--border);
 }
