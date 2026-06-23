@@ -106,9 +106,12 @@ function wrapSelected(prefix: string, suffix: string) {
   const sel = v.getSelection()
   v.focus()
   if (sel) {
-    v.insertValue(`${prefix}${sel}${suffix}`)
+    // ⚠️ 不能使用 v.insertValue()，它内部会 range.collapse(true)
+    // 导致选中文本不被删除，出现 **xx**xx 的重复问题。
+    // 改用 execCommand 正确替换选中区域并触发 Vditor 的 input 事件。
+    document.execCommand('insertText', false, `${prefix}${sel}${suffix}`)
   } else {
-    v.insertValue(`${prefix}文本${suffix}`)
+    document.execCommand('insertText', false, `${prefix}文本${suffix}`)
   }
 }
 
