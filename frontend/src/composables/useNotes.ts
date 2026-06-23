@@ -1,8 +1,8 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { listNotes, getNote, createNote, updateNote, deleteNote } from '@/api/notes'
 import { getSetting, putSetting } from '@/api/settings'
-import { useWebSocket, type WsMessage } from './useWebSocket'
-import type { Note } from '@/api/types'
+import { useWebSocket } from './useWebSocket'
+import type { Note, WsMessage } from '@/api/types'
 
 /**
  * 笔记状态管理与 CRUD 操作。
@@ -25,13 +25,13 @@ export function useNotes() {
     switch (msg.type) {
       case 'note_created':
         if (msg.note) {
-          const exists = notes.value.find((n) => n.id === msg.note!.id)
+          const exists = notes.value.find((n) => n.id === msg.note.id)
           if (!exists) notes.value.unshift(msg.note)
         }
         break
       case 'note_updated':
         if (msg.note) {
-          const idx = notes.value.findIndex((n) => n.id === msg.note!.id)
+          const idx = notes.value.findIndex((n) => n.id === msg.note.id)
           if (idx !== -1) notes.value[idx] = msg.note
           if (selectedId.value === msg.note.id) selectedNote.value = msg.note
         }
@@ -84,6 +84,7 @@ export function useNotes() {
         // 获取上次打开笔记失败，静默忽略
       }
     } catch (err) {
+      console.error(err)
       showError('加载笔记列表失败，请检查后端是否运行')
     }
   }
@@ -100,6 +101,7 @@ export function useNotes() {
       // 持久化最后打开笔记 ID
       putSetting(lastOpenedKey, String(id)).catch(() => {})
     } catch (err) {
+      console.error(err)
       showError('加载笔记详情失败')
     }
   }
@@ -111,6 +113,7 @@ export function useNotes() {
       selectedId.value = note.id
       selectedNote.value = note
     } catch (err) {
+      console.error(err)
       showError('创建笔记失败')
     }
   }
@@ -132,6 +135,7 @@ export function useNotes() {
         saveStatus.value = 'idle'
       }, 2000)
     } catch (err) {
+      console.error(err)
       showError('保存笔记失败，请稍后重试')
       saveStatus.value = 'idle'
     } finally {
@@ -154,6 +158,7 @@ export function useNotes() {
         }
       }).catch(() => {})
     } catch (err) {
+      console.error(err)
       showError('删除笔记失败')
     }
   }

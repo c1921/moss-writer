@@ -2,8 +2,10 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import AppSidebar from "@/components/AppSidebar.vue"
 import NoteEditor from "@/components/NoteEditor.vue"
-import { useFolderSync } from "@/composables/useFolderSync"
 import { useNotes } from "@/composables/useNotes"
+import { useWebSocket } from "@/composables/useWebSocket"
+import { useFoldersStore } from '@/stores/folders'
+import type { WsMessage } from '@/api/types'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -17,7 +19,18 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 
-useFolderSync()
+const foldersStore = useFoldersStore()
+
+// 使用共享的 WebSocket 单例监听变更事件，自动刷新文件夹树
+const { onMessage } = useWebSocket()
+const unsubWs = onMessage((msg: WsMessage) => {
+  if (
+    ['folder_created', 'folder_updated', 'folder_deleted',
+     'note_created', 'note_updated', 'note_deleted'].includes(msg.type)
+  ) {
+    foldersStore.fetchFolders()
+  }
+})
 
 const {
   selectedNote,
@@ -34,8 +47,15 @@ const {
 // 组件引用（用于键盘快捷键）
 const editorRef = ref<InstanceType<typeof NoteEditor> | null>(null)
 
-// 键盘快捷键
+// 键盘快捷键 — 排除编辑器输入区焦点
 function onKeyDown(e: KeyboardEvent) {
+  const target = e.target as HTMLElement
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.isContentEditable
+  ) return
+
   const mod = e.ctrlKey || e.metaKey
   if (!mod) return
 
@@ -57,6 +77,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
+  unsubWs()
 })
 </script>
 

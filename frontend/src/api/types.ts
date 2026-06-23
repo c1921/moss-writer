@@ -27,3 +27,12 @@ export interface TreeNode {
   type: TreeNodeType
   children: TreeNode[]
 }
+
+/** WebSocket 消息（与后端 ws.WsMessage 对齐） */
+export interface WsMessage {
+  type: 'folder_created' | 'folder_updated' | 'folder_deleted'
+      | 'note_created' | 'note_updated' | 'note_deleted'
+  note?: Note
+  folder?: Folder
+  id?: number
+}

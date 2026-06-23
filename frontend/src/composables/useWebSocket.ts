@@ -1,12 +1,5 @@
 import { ref, onMounted, onUnmounted, type Ref } from 'vue'
-import type { Note } from '@/api/types'
-
-// WebSocket 消息（与后端协议对齐）
-export interface WsMessage {
-  type: 'note_created' | 'note_updated' | 'note_deleted'
-  note?: Note
-  id?: number
-}
+import type { WsMessage } from '@/api/types'
 
 type MessageHandler = (msg: WsMessage) => void
 
