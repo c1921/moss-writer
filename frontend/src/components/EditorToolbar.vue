@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import type Vditor from 'vditor'
 import {
   Bold, Italic, Strikethrough,
   Code, CodeXml, TextQuote,
@@ -25,9 +26,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const props = defineProps<{
-  vditor: any
+  vditor: Vditor | null
 }>()
 
 // ---------- 编辑模式 ----------
@@ -36,7 +36,7 @@ type EditMode = 'wysiwyg' | 'ir' | 'sv'
 
 const currentMode = ref<EditMode>('ir')
 
-function getV() {
+function getV(): Vditor | null {
   return props.vditor
 }
 
@@ -50,10 +50,10 @@ function switchEditMode(mode: EditMode) {
   const markdown = v.getValue()
 
   // 隐藏所有编辑面板
-  iv.ir.element.parentElement.style.display = 'none'
-  iv.wysiwyg.element.parentElement.style.display = 'none'
-  iv.sv.element.style.display = 'none'
-  iv.preview.element.style.display = 'none'
+  iv.ir!.element.parentElement!.style.display = 'none'
+  iv.wysiwyg!.element.parentElement!.style.display = 'none'
+  iv.sv!.element.style.display = 'none'
+  iv.preview!.element.style.display = 'none'
 
   // 配置 Lute 模式
   iv.lute.SetVditorIR(mode === 'ir')
@@ -62,15 +62,15 @@ function switchEditMode(mode: EditMode) {
 
   // 显示目标面板并渲染内容
   if (mode === 'ir') {
-    iv.ir.element.parentElement.style.display = 'block'
-    iv.ir.element.innerHTML = iv.lute.Md2VditorIRDOM(markdown)
+    iv.ir!.element.parentElement!.style.display = 'block'
+    iv.ir!.element.innerHTML = iv.lute.Md2VditorIRDOM(markdown)
   } else if (mode === 'wysiwyg') {
-    iv.wysiwyg.element.parentElement.style.display = 'block'
-    iv.wysiwyg.element.innerHTML = iv.lute.Md2VditorDOM(markdown)
+    iv.wysiwyg!.element.parentElement!.style.display = 'block'
+    iv.wysiwyg!.element.innerHTML = iv.lute.Md2VditorDOM(markdown)
   } else if (mode === 'sv') {
-    iv.sv.element.style.display = 'block'
+    iv.sv!.element.style.display = 'block'
     const svHTML = iv.lute.SpinVditorSVDOM(markdown)
-    iv.sv.element.innerHTML = svHTML || ''
+    iv.sv!.element.innerHTML = svHTML || ''
   }
 
   iv.currentMode = mode
@@ -89,10 +89,10 @@ function toggleSVPreview() {
   const iv = v.vditor
   if (iv.currentMode !== 'sv') return
 
-  const previewEl = iv.preview.element
+  const previewEl = iv.preview!.element
   if (previewEl.style.display === 'none' || !previewEl.style.display) {
     previewEl.style.display = 'block'
-    iv.preview.render(iv)
+    iv.preview!.render(iv)
   } else {
     previewEl.style.display = 'none'
   }
@@ -106,12 +106,9 @@ function wrapSelected(prefix: string, suffix: string) {
   const sel = v.getSelection()
   v.focus()
   if (sel) {
-    // ⚠️ 不能使用 v.insertValue()，它内部会 range.collapse(true)
-    // 导致选中文本不被删除，出现 **xx**xx 的重复问题。
-    // 改用 execCommand 正确替换选中区域并触发 Vditor 的 input 事件。
-    document.execCommand('insertText', false, `${prefix}${sel}${suffix}`)
+    v.updateValue(`${prefix}${sel}${suffix}`)
   } else {
-    document.execCommand('insertText', false, `${prefix}文本${suffix}`)
+    v.insertValue(`${prefix}文本${suffix}`)
   }
 }
 
@@ -157,15 +154,15 @@ function insertList(prefix: string) {
 function undo() {
   const v = getV()
   if (!v) return
-  v.vditor.ir?.undo?.()
-  v.vditor.wysiwyg?.undo?.()
+  v.vditor.ir?.undo?.(v.vditor)
+  v.vditor.wysiwyg?.undo?.(v.vditor)
 }
 
 function redo() {
   const v = getV()
   if (!v) return
-  v.vditor.ir?.redo?.()
-  v.vditor.wysiwyg?.redo?.()
+  v.vditor.ir?.redo?.(v.vditor)
+  v.vditor.wysiwyg?.redo?.(v.vditor)
 }
 
 function toggleOutline() {

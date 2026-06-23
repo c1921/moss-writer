@@ -76,6 +76,7 @@ export const useFoldersStore = defineStore('folders', () => {
       rawNotes.value = notes
       tree.value = buildTree(folders, notes)
     } catch (e) {
+      console.error(e)
       error.value = (e as Error).message
     } finally {
       loading.value = false
